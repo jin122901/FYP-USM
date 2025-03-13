@@ -32,7 +32,7 @@ const Header = () => {
   // 🔹 Logout Function
   const handleLogout = async () => {
     try {
-      await axios.post("http://127.0.0.1:5000/logout", {}, { withCredentials: true });
+      await axios.post("http://localhost:5000/logout", {}, { withCredentials: true });
 
       // ✅ Clear session data from local storage
       localStorage.removeItem("userType");

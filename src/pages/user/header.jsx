@@ -5,14 +5,16 @@ import "../../assets/vendor/bootstrap/css/bootstrap.min.css";
 import "../../assets/vendor/bootstrap-icons/bootstrap-icons.css";
 import "../../assets/css/main.css";
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
+import { useSession } from "../../components/session";
 
 const Header = () => {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const navigate = useNavigate();
   const [userType, setUserType] = useState(null);
+  const [userEmail, setUserEmail] = useState(null); 
   const checkSession = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:5000/api/check_session", {
+      const response = await fetch("http://localhost:5000/api/check_session", {
         credentials: "include", // Ensure cookies are sent
       });
   
@@ -30,7 +32,7 @@ const Header = () => {
   };
   
   useEffect(() => {
-    const interval = setInterval(checkSession, 60000); // Check every 1 min
+    const interval = setInterval(checkSession, 600000); // Check every 1 min
     return () => clearInterval(interval);
   }, []);
 
@@ -40,6 +42,9 @@ const Header = () => {
     document.body.classList.toggle("mobile-nav-active");
   };
 
+  const UserHeader = () => {
+    const { userEmail } = useSession(); // 🔹 Get user email
+  }
   // Close mobile menu when resizing to large screens
   useEffect(() => {
     const handleResize = () => {
@@ -56,7 +61,7 @@ const Header = () => {
   // 🔹 Logout Function
   const handleLogout = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:5000/api/logout", { // 🔹 Use the correct URL
+      const response = await fetch("http://localhost:5000/api/logout", { // 🔹 Use the correct URL
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -79,19 +84,19 @@ const Header = () => {
     <header id="header" className="header d-flex align-items-center sticky-top">
       <div className="container-fluid container-xl position-relative d-flex align-items-center">
         {/* Logo */}
-        <Link to="/" className="logo d-flex align-items-center me-auto">
+        <Link to="/home" className="logo d-flex align-items-center me-auto">
           <h1 className="sitename">EduInsight</h1>
         </Link>
-
+        
         {/* Navigation */}
         <nav id="navmenu" className={`navmenu ${isMobileNavOpen ? "mobile-nav-active" : ""}`}>
           <ul>
-            <li><Link to="/" onClick={() => setIsMobileNavOpen(false)}>Home</Link></li>
-            <li><a href="#about" onClick={() => setIsMobileNavOpen(false)}>About</a></li>
-            <li><a href="#services" onClick={() => setIsMobileNavOpen(false)}>Services</a></li>
+            <li><Link to="/home" onClick={() => setIsMobileNavOpen(false)}>Home</Link></li>
+            <li><Link to="/uploadPage" onClick={() => setIsMobileNavOpen(false)}>Services</Link></li>
+            <li><Link to="/account" onClick={() => setIsMobileNavOpen(false)}>Account</Link></li>
           </ul>
         </nav>
-
+        
         {/* Logout Button */}
         <Link className="btn-getstarted" onClick={handleLogout}>Logout</Link>
 

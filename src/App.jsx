@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Header from "./pages/public/header";
 import AdminHeader from "./pages/admin/header";
@@ -8,53 +8,95 @@ import Login from "./pages/public/Login";
 import RegisterPage from "./pages/public/RegisterPage";
 import AdminPage from "./pages/admin/home";
 import UserPage from "./pages/user/home";
+import UploadForm from "./pages/user/uploadfile";
 import Footer from "./pages/public/footer";
 import ProtectedRoute from "../backend/routes/protectedroute";
-
+import Account from "./pages/user/account";
+import { SessionProvider } from "./components/session"; // Import SessionProvider
 
 const App = () => {
-  
   return (
     <Router>
       <Routes>
-        {/* Public Page - No Restriction */}
+        {/* Public Routes - No session needed */}
         <Route path="/" element={<><Header /><Home /><Footer /></>} />
-
-        {/* Login Page */}
         <Route path="/login" element={<><Header /><Login /><Footer /></>} />
-
-        {/* Login Page */}
         <Route path="/RegisterPage" element={<><Header /><RegisterPage /><Footer /></>} />
 
-        {/* Protect Admin Route (Only usr_type = 0 can access) */}
+        {/* 🔹 Wrap only protected routes with SessionProvider */}
         <Route
-            path="/admin"
-            element={
-                <ProtectedRoute allowedRoles={[0]}>
-                    <>
-                      <AdminHeader />
-                      <AdminPage />
-                      <Footer />
-                    </>
-                </ProtectedRoute>
-            }
-        />
+          path="/*"
+          element={
+            <SessionProvider>
+              <Routes>
+                {/* Protected Admin Route (Only usr_type = 0 can access) */}
+                <Route
+                  path="/admin"
+                  element={
+                    <ProtectedRoute allowedRoles={[0]}>
+                      <>
+                        <AdminHeader />
+                        <AdminPage />
+                        <Footer />
+                      </>
+                    </ProtectedRoute>
+                  }
+                />
 
-        {/* Protect User Route (Only usr_type = 1 can access) */}
-        <Route
-            path="/user"
-            element={
-                <ProtectedRoute allowedRoles={[1]}>
-                    <>
-                      <UserHeader />
-                      <UserPage />
-                      <Footer />
-                    </>
-                </ProtectedRoute>
-            }
+                {/* Protected User Routes (Only usr_type = 1 can access) */}
+                <Route
+                  path="/user"
+                  element={
+                    <ProtectedRoute allowedRoles={[1]}>
+                      <>
+                        <UserHeader />
+                        <UserPage />
+                        <Footer />
+                      </>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/uploadPage"
+                  element={
+                    <ProtectedRoute allowedRoles={[1]}>
+                      <>
+                        <UserHeader />
+                        <UploadForm />
+                        <Footer />
+                      </>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/account"
+                  element={
+                    <ProtectedRoute allowedRoles={[1]}>
+                      <>
+                        <UserHeader />
+                        <Account />
+                        <Footer />
+                      </>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/home"
+                  element={
+                    <ProtectedRoute allowedRoles={[1]}>
+                      <>
+                        <UserHeader />
+                        <UserPage />
+                        <Footer />
+                      </>
+                    </ProtectedRoute>
+                  }
+                />
+              </Routes>
+            </SessionProvider>
+          }
         />
       </Routes>
-      
     </Router>
   );
 };

@@ -14,9 +14,9 @@ function LoginPage() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            const response = await axios.post("http://127.0.0.1:5000/api/login", formData, { withCredentials: true });
+            const response = await axios.post("http://localhost:5000/api/login", formData, { withCredentials: true });
 
-            
+            localStorage.setItem("user_email", response.data.email);
             localStorage.setItem("user_type", response.data.user_type);
             if (response.data.user_type === 0) {
                 navigate("/admin");  // Redirect admin to admin page
@@ -33,7 +33,7 @@ function LoginPage() {
             <div className="row justify-content-center">
                 <div className="col-md-6">
                     <h2 className="text-center">Login</h2>
-                    <form onSubmit={handleSubmit} className="php-email-form" data-aos="fade-up" data-aos-delay="200">
+                    <form onSubmit={handleSubmit} className="php-email-form" data-aos="fade-up" data-aos-delay="200" method='POST'>
                     
                         <div className="mb-3">
                             <label htmlFor="email-field" className="form-label">Your Email</label>
