@@ -29,8 +29,8 @@ def insert_user(name, email, password, industry, usr_type):
     cursor = connection.cursor()
     """Insert a new user into the database."""
     try:
-        cursor.execute("INSERT INTO user_info (name, email, password, industry, usr_type) VALUES (%s, %s, %s, %s, %s) RETURNING id;",
-                       (name, email, password, industry, 1))
+        cursor.execute("INSERT INTO user_info (name, email, password, industry, usr_type,status) VALUES (%s, %s, %s, %s, %s,%s) RETURNING id;",
+                       (name, email, password, industry, 1,1))
         user_id = cursor.fetchone()[0]
         connection.commit()
         return user_id
@@ -88,3 +88,22 @@ def update_user_password(email, new_password):
     hashed_password = bcrypt.generate_password_hash(new_password).decode('utf-8')
     cursor.execute("UPDATE user_info SET password_hash = %s WHERE email = %s", (hashed_password, email))
     connection.commit()
+
+# ✅ Fetch all users
+def get_all_users():
+    connection = get_db_connection()
+    cursor = connection.cursor()
+    cursor.execute("SELECT * FROM user_info;")
+    users = cursor.fetchall()
+    cursor.close()
+    connection.close()
+    return users
+
+# ✅ Update user status (Activate / Inactivate)
+def update_user_status(user_id, new_status):
+    connection = get_db_connection()
+    cursor = connection.cursor()
+    cursor.execute("UPDATE user_info SET status = %s WHERE id = %s;", (new_status, user_id))
+    connection.commit()
+    cursor.close()
+    connection.close()

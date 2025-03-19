@@ -48,15 +48,15 @@ const Header = () => {
     <header id="header" className="header d-flex align-items-center sticky-top">
       <div className="container-fluid container-xl position-relative d-flex align-items-center">
         {/* Logo */}
-        <Link to="/" className="logo d-flex align-items-center me-auto">
+        <Link to="/AdminPage" className="logo d-flex align-items-center me-auto">
           <h1 className="sitename">EduInsight</h1>
         </Link>
 
         {/* Navigation */}
         <nav id="navmenu" className={`navmenu ${isMobileNavOpen ? "mobile-nav-active" : ""}`}>
           <ul>
-            <li><Link to="/" onClick={() => setIsMobileNavOpen(false)}>Home</Link></li>
-            <li><a href="#about" onClick={() => setIsMobileNavOpen(false)}>About</a></li>
+            <li><Link to="/AdminPage" onClick={() => setIsMobileNavOpen(false)}>Home</Link></li>
+            <li><a href="/usermanagement" onClick={() => setIsMobileNavOpen(false)}>User Management</a></li>
             <li><a href="#services" onClick={() => setIsMobileNavOpen(false)}>Services</a></li>
           </ul>
         </nav>

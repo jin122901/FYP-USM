@@ -68,31 +68,78 @@ function UploadForm() {
             </div>
             
             <div className="modal fade" id="uploadModal" tabIndex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
-                <div className="modal-dialog">
-                    <div className="modal-content">
-                        <div className="modal-header">
-                            <h5 className="modal-title" id="uploadModalLabel">Upload Excel or CSV File</h5>
-                            <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                        </div>
-                        <div className="modal-body">
-                            <form onSubmit={handleSubmit}>
-                                <div className="mb-3">
-                                    <label htmlFor="file-field" className="form-label">Upload File</label>
-                                    <input type="file" className="form-control" id="file-field" accept=".csv, .xls, .xlsx" onChange={handleFileChange} required />
-                                </div>
-                                <div className="mb-3">
-                                    <label htmlFor="coursename" className="form-label">Course Name</label>
-                                    <input type="text" className="form-control" id="coursename" value={coursename} onChange={handleCourseChange} required />
-                                </div>
-                                {error && <p className="text-danger">{error}</p>}
-                                <div className="text-center">
-                                    <button type="submit" className="btn btn-primary">Submit</button>
-                                </div>
-                            </form>
-                        </div>
+    <div className="modal-dialog">
+        <div className="modal-content">
+            {/* Modal Header */}
+            <div className="modal-header">
+                <h5 className="modal-title" id="uploadModalLabel">
+                    Upload Excel or CSV File
+                </h5>
+                <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="modal-body">
+                {/* File Upload Requirements - Collapsible Section */}
+                <div className="alert alert-info" role="alert">
+                    <strong>📌 File Upload Requirements</strong>
+                    <button className="btn btn-sm btn-link text-primary" type="button" data-bs-toggle="collapse" data-bs-target="#fileRequirements">
+                        (View Details)
+                    </button>
+                    <div className="collapse mt-2" id="fileRequirements">
+                        <ul className="list-unstyled">
+                            <li>🔹 <strong>Allowed Formats:</strong> CSV (.csv), Excel (.xlsx)</li>
+                            <li>🔹 <strong>Max File Size:</strong> 10MB</li>
+                            <li>🔹 <strong>Required Column:</strong> "Feedback"</li>
+                            <li>🔹 <strong>Optional Columns:</strong> "StudentID", "Date", etc.</li>
+                            <li>✅ No empty rows & proper formatting</li>
+                            <li>✅ Use UTF-8 encoding</li>
+                            <li>❌ Invalid formats (e.g., .txt, .pdf, .docx) are not accepted</li>
+                            <li>❌ Missing "Feedback" column = File rejected</li>
+                        </ul>
                     </div>
                 </div>
+
+                {/* File Upload Form */}
+                <form onSubmit={handleSubmit}>
+                    <div className="mb-3">
+                        <label htmlFor="file-field" className="form-label">Upload File</label>
+                        <input 
+                            type="file" 
+                            className="form-control" 
+                            id="file-field" 
+                            accept=".csv, .xls, .xlsx" 
+                            onChange={handleFileChange} 
+                            required 
+                        />
+                    </div>
+
+                    <div className="mb-3">
+                        <label htmlFor="coursename" className="form-label">Course Name</label>
+                        <input 
+                            type="text" 
+                            className="form-control" 
+                            id="coursename" 
+                            value={coursename} 
+                            onChange={handleCourseChange} 
+                            required 
+                        />
+                    </div>
+
+                    {error && <p className="text-danger">{error}</p>}
+
+                    {/* Submit Button */}
+                    <div className="text-center">
+                        <button type="submit" className="btn btn-primary">
+                            <i className="bi bi-upload"></i> Submit
+                        </button>
+                    </div>
+                </form>
             </div>
+        </div>
+    </div>
+</div>
+
             <table className="table mt-4">
                 <thead className="table-light">
                     <tr>
@@ -110,7 +157,7 @@ function UploadForm() {
                         <td>feedback.xlsx</td>
                         <td>2025-03-11</td>
                         <td>
-                            <button className="btn btn-info btn-sm me-2">View</button>
+                            <button className="btn btn-info btn-sm me-2">Results</button>
                             <button className="btn btn-danger btn-sm">Delete</button>
                         </td>
                     </tr>

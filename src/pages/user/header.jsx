@@ -84,14 +84,14 @@ const Header = () => {
     <header id="header" className="header d-flex align-items-center sticky-top">
       <div className="container-fluid container-xl position-relative d-flex align-items-center">
         {/* Logo */}
-        <Link to="/home" className="logo d-flex align-items-center me-auto">
+        <Link to="/UserPage" className="logo d-flex align-items-center me-auto">
           <h1 className="sitename">EduInsight</h1>
         </Link>
         
         {/* Navigation */}
         <nav id="navmenu" className={`navmenu ${isMobileNavOpen ? "mobile-nav-active" : ""}`}>
           <ul>
-            <li><Link to="/home" onClick={() => setIsMobileNavOpen(false)}>Home</Link></li>
+            <li><Link to="/UserPage" onClick={() => setIsMobileNavOpen(false)}>Home</Link></li>
             <li><Link to="/uploadPage" onClick={() => setIsMobileNavOpen(false)}>Services</Link></li>
             <li><Link to="/account" onClick={() => setIsMobileNavOpen(false)}>Account</Link></li>
           </ul>

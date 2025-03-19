@@ -12,6 +12,7 @@ import UploadForm from "./pages/user/uploadfile";
 import Footer from "./pages/public/footer";
 import ProtectedRoute from "../backend/routes/protectedroute";
 import Account from "./pages/user/account";
+import UserManagement from "./pages/admin/usermanagement"
 import { SessionProvider } from "./components/session"; // Import SessionProvider
 
 const App = () => {
@@ -32,6 +33,32 @@ const App = () => {
                 {/* Protected Admin Route (Only usr_type = 0 can access) */}
                 <Route
                   path="/admin"
+                  element={
+                    <ProtectedRoute allowedRoles={[0]}>
+                      <>
+                        <AdminHeader />
+                        <AdminPage />
+                        <Footer />
+                      </>
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/UserManagement"
+                  element={
+                    <ProtectedRoute allowedRoles={[0]}>
+                      <>
+                        <AdminHeader />
+                        <UserManagement />
+                        <Footer />
+                      </>
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/AdminPage"
                   element={
                     <ProtectedRoute allowedRoles={[0]}>
                       <>
@@ -81,7 +108,7 @@ const App = () => {
                   }
                 />
                 <Route
-                  path="/home"
+                  path="/UserPage"
                   element={
                     <ProtectedRoute allowedRoles={[1]}>
                       <>

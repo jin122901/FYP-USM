@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, session
-from model.user import insert_user, get_user_by_email, update_user_details,get_user_password,update_user_password,get_useremail
+from model.user import get_all_users,insert_user, get_user_by_email, update_user_details,get_user_password,update_user_password,get_useremail
 from datetime import datetime, timedelta
 import pytz
 
@@ -164,3 +164,13 @@ def change_password():
 
     update_user_password(email, new_password)
     return jsonify({"message": "Password updated successfully"})
+
+# ✅ Route to fetch all users
+@auth.route('/userlist', methods=['GET'])
+def fetch_users():
+    users = get_all_users()
+    user_list = [
+        {"id": user[0], "name": user[1], "email": user[2], "industry": user[4], "usr_type": user[5], "status": user[6]}
+        for user in users
+    ]
+    return jsonify(user_list), 200
