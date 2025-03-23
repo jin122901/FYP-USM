@@ -1,10 +1,10 @@
 from flask import Blueprint, jsonify, request
 from model.user import get_all_users, update_user_status
 
-app = Blueprint('user_routes', __name__)  # Create a Blueprint for user routes
+user_bp = Blueprint("users", __name__)  # Create a Blueprint for user routes
 
 # ✅ Route to fetch all users
-@app.route('/userlist', methods=['GET'])
+@user_bp.route('/userlist', methods=['GET'])
 def fetch_users():
     users = get_all_users()
     user_list = [
@@ -14,7 +14,7 @@ def fetch_users():
     return jsonify(user_list), 200
 
 # ✅ Route to activate/inactivate user
-@app.route('/users/status', methods=['PUT'])
+@user_bp.route('/users/status', methods=['PUT'])
 def change_user_status():
     data = request.get_json()
     user_id = data.get("id")

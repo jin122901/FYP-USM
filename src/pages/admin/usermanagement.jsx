@@ -9,7 +9,7 @@ const UserManagement = () => {
     }, []);
 
     const fetchUsers = () => {
-        axios.get("http://localhost:5000/api/userlist") // Ensure the backend route exists
+        axios.get("http://localhost:5000/api/users/userlist") // Ensure the backend route exists
             .then(response => {
                 setUsers(response.data);
             })

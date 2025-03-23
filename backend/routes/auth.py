@@ -104,21 +104,6 @@ def check_session():
 
     return jsonify({"error": "Not logged in"}), 401
 
-@auth.route("/check_sessionnnn", methods=["GET"])
-def check_sessionnnn():
-    if not session:
-        print("Session is empty or not initialized.")  # Debugging
-        return jsonify({"error": "No session data available"}), 400
-    
-    print("Session data:", session)  # Debugging
-    return jsonify({"email": session.get("email"), "session": dict(session)})
-
-@auth.route("/test_session", methods=["GET"])
-def test_session():
-    session["test"] = "working"
-    session["email"]="j@gmail.com"
-    print(dict(session))
-    return jsonify({"session": dict(session)})
 
 @auth.route("/clear_session", methods=["POST"])
 def clear_session():
@@ -164,13 +149,3 @@ def change_password():
 
     update_user_password(email, new_password)
     return jsonify({"message": "Password updated successfully"})
-
-# ✅ Route to fetch all users
-@auth.route('/userlist', methods=['GET'])
-def fetch_users():
-    users = get_all_users()
-    user_list = [
-        {"id": user[0], "name": user[1], "email": user[2], "industry": user[4], "usr_type": user[5], "status": user[6]}
-        for user in users
-    ]
-    return jsonify(user_list), 200
