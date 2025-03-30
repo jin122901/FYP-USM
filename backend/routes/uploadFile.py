@@ -4,10 +4,11 @@ import datetime
 import pandas as pd
 from flask import Blueprint, request, jsonify,session
 from werkzeug.utils import secure_filename
-from model.file import insert_file_path, fetch_user_files
+from model.file import insert_file_path, fetch_user_files, update_file_status
 from transformers import pipeline
 from ml_model import sentiment_pipeline 
 from tqdm import tqdm
+import threading
 
 
 upload_bp = Blueprint("upload", __name__)
@@ -29,16 +30,31 @@ def generate_unique_filename(filename):
     unique_id = uuid.uuid4().hex[:8]  # Random unique ID (first 8 chars of UUID)
     return f"{timestamp}_{unique_id}.{file_ext}"
 
-def validate_file_columns(file_path):
-    """Check if the uploaded file contains at least one required column."""
+def validate_and_fix_file_columns(file_path):
+    """Validate and modify the uploaded file columns to ensure 'Feedback' is present."""
     try:
         df = pd.read_csv(file_path) if file_path.endswith(".csv") else pd.read_excel(file_path)
+
         required_columns = {"Feedback", "Comment", "Review"}
-        if not any(col in df.columns for col in required_columns):
+        found_columns = [col for col in df.columns if col in required_columns]
+
+        if not found_columns:
             return False, "File must contain at least one of these columns: Feedback, Comment, Review."
-        return True, None
+
+        # Rename the first found column to "Feedback" if it's not already "Feedback"
+        if "Feedback" not in df.columns:
+            df.rename(columns={found_columns[0]: "Feedback"}, inplace=True)
+
+        # Save the modified file back
+        if file_path.endswith(".csv"):
+            df.to_csv(file_path, index=False)
+        else:
+            df.to_excel(file_path, index=False)
+
+        return True, None  # Validation success
+
     except Exception as e:
-        return False, f"Error reading file: {str(e)}"
+        return False, f"Error processing file: {str(e)}"
     
 def process_file(file_path):
     """ Reads the uploaded CSV/XLSX file, truncates long feedback, and returns a DataFrame with a progress bar """
@@ -79,15 +95,10 @@ def save_processed_data(df, original_filename):
     df.to_csv(processed_file_path, index=False)
     return processed_file_path
 
+
 @upload_bp.route('/upload', methods=['POST'])
 def upload_file():
     print("\n🔹 [UPLOAD FILE REQUEST RECEIVED] 🔹")
-
-    # Debugging Request Headers & Form Data
-    print("➡️ Request Headers:", dict(request.headers))
-    print("➡️ Content Type:", request.content_type)
-    print("📂 Uploaded Files:", request.files)
-    print("📋 Form Data:", request.form)
 
     # Check if 'file' exists in the request
     if 'file' not in request.files:
@@ -97,9 +108,6 @@ def upload_file():
     file = request.files['file']
     coursename = request.form.get("coursename")
     userid = session.get('user_id')
-
-    # Debugging Session Data
-    print("🆔 User ID (Session):", userid)
 
     # Check if the file is empty or has no name
     if not file or file.filename == "":
@@ -121,10 +129,6 @@ def upload_file():
     unique_filename = generate_unique_filename(original_filename)
     file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
 
-    # Debugging File Details
-    print(f"✅ File Accepted: {original_filename} -> {unique_filename}")
-    print(f"📌 Saving to: {file_path}")
-
     # Save file
     try:
         file.save(file_path)
@@ -134,63 +138,48 @@ def upload_file():
         return jsonify({"error": "File saving failed"}), 500
 
     # Validate file content
-    is_valid, error_msg = validate_file_columns(file_path)
+    is_valid, error_msg = validate_and_fix_file_columns(file_path)
     if not is_valid:
         print(f"❌ File Validation Failed: {error_msg}")
         os.remove(file_path)  # Remove invalid file
         return jsonify({"error": error_msg}), 400
 
-    # Process file to extract feedback column
-    df, error_msg = process_file(file_path)
-    if df is None:
-        print(f"❌ File Processing Error: {error_msg}")
-        os.remove(file_path)
-        return jsonify({"error": error_msg}), 400
+    # ✅ **Return success response immediately**
+    
+    response = {"message": "File uploaded successfully!", "file_path": file_path}
+    threading.Thread(target=run_sentiment_analysis, args=(file_path, unique_filename, coursename, userid)).start()
+    return jsonify(response), 200
 
-    # Extract feedback list
-    feedback_list = df["Feedback"].astype(str).tolist()
 
-    # Perform sentiment analysis
+def run_sentiment_analysis(file_path, unique_filename, coursename, userid):
     try:
+        print("🚀 Starting sentiment analysis...")
+        # Save processed data
+
+        # Store file path in database
+        insert_file_path(unique_filename, unique_filename, coursename, userid)
+        # Process file to extract feedback
+        df, error_msg = process_file(file_path)
+        if df is None:
+            print(f"❌ File Processing Error: {error_msg}")
+            os.remove(file_path)
+            return
+
+        # Extract feedback list
+        feedback_list = df["Feedback"].astype(str).tolist()
+
+        # Perform sentiment analysis
         sentiment_results = perform_sentiment_analysis(feedback_list)
         print("✅ Sentiment analysis completed successfully!")
-    except Exception as e:
-        print(f"❌ Sentiment Analysis Error: {e}")
-        os.remove(file_path)
-        return jsonify({"error": "Sentiment analysis failed"}), 500
 
-    # Add sentiment results to DataFrame
-    df["Sentiment"] = [result["label"] for result in sentiment_results]
-    df["Confidence"] = [result["score"] for result in sentiment_results]
+        # Add sentiment results to DataFrame
+        df["Sentiment"] = [result["label"] for result in sentiment_results]
 
-    # Save processed data
-    processed_file_path = save_processed_data(df, unique_filename)
-
-    # Store file path in database
-    try:
-        insert_file_path(unique_filename, processed_file_path, coursename, userid)
         print("✅ File path stored in database successfully!")
-        return jsonify({
-            "message": "File uploaded and analyzed successfully!", 
-            "file_path": processed_file_path
-        }), 200
+        update_file_status("35",unique_filename)
+
     except Exception as e:
-        print(f"❌ Database Error: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@upload_bp.route("/check_sessionnnn", methods=["GET"])
-def check_sessionnnn():
-    if not session:
-        print("Session is empty or not initialized.")  # Debugging
-        return jsonify({"error": "No session data available"}), 400
-
-    userid = session.get('user_id')
-
-    if not userid:
-        print("Error: User ID not found in session")  # ✅ Debugging
-        return jsonify({"error": "User not logged in"}), 401
-
-    return jsonify({"user_id": userid})
+        print(f"❌ Error during sentiment analysis: {e}")
 
 @upload_bp.route('/files', methods=['GET'])
 def get_uploaded_files():

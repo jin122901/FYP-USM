@@ -24,3 +24,4 @@ dist-ssr
 *.sw?
 *.csv
 /backend/model
+/backend/flask_session
