@@ -7,27 +7,75 @@ function UploadForm() {
     const [error, setError] = useState("");
     const [successMessage, setSuccessMessage] = useState("");
     const [fileList, setFileList] = useState([]);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
 
     useEffect(() => {
         fetchFiles();
     }, []);
 
-    const fetchFiles = () => {
-        axios.get("http://localhost:5000/api/file/files", { withCredentials: true })
-            .then(response => {
-                const formattedFiles = response.data.files.map(file => ({
-                    file_id: file[0],
-                    filename: file[1],
-                    file_path: file[2],
-                    coursename: file[3],
-                    user_id: file[4],
-                    upload_at: file[5],
-                    statusprocess: file[6]
-                }));
-                setFileList(formattedFiles);
-            })
-            .catch(error => console.error("Error fetching files:", error));
+    const handleDelete = async (fileId) => {
+        try {
+            // Send DELETE request to backend with the file identifier (e.g., file_id or filename)
+            const response = await axios.delete(`http://localhost:5000/api/file/files/deleteFile/${fileId}`, {
+                withCredentials: true, // Include credentials if needed
+            });
+    
+            // Check if deletion was successful and refresh the file list
+            if (response.data.success) {
+                alert('File deleted successfully!');
+                fetchFiles();  // Refresh the list of files
+            } else {
+                alert('Failed to delete the file.');
+            }
+        } catch (error) {
+            console.error('Error deleting file:', error);
+            alert('Error deleting file. Please try again.');
+        }
     };
+
+    const fetchFiles = (searchQuery = "", page = 1) => {
+        axios.get("http://localhost:5000/api/file/files", {
+            params: { search: searchQuery, page: page, limit: 10 },
+            withCredentials: true
+        })
+        .then(response => {
+            console.log("API Response:", response.data); // Debugging
+    
+            // Ensure we access the correct nested structure
+            const filesData = response.data.files?.files; 
+    
+            if (!Array.isArray(filesData)) {
+                console.error("Error: Expected an array but got", filesData);
+                setFileList([]);  // Prevent crashes
+                return;
+            }
+    
+            const formattedFiles = filesData.map(file => ({
+                fileid: file.fileid,  // Adjust to match the correct key in response
+                filename: file.filename,
+                file_path: file.file_path,
+                coursename: file.coursename,
+                uploaded_at: file.uploaded_at,
+                statusprocess: file.statusprocess || 0
+            }));
+    
+            setFileList(formattedFiles);
+            setCurrentPage(response.data.files.current_page || 1);
+            setTotalPages(response.data.files.total_pages || 1);
+        })
+        .catch(error => console.error("Error fetching files:", error));
+    };
+
+    useEffect(() => {
+        const delayDebounceFn = setTimeout(() => {
+            console.log("Fetching files for search:", searchQuery);
+            fetchFiles(searchQuery);
+        }, 300); // Wait 300ms before fetching
+    
+        return () => clearTimeout(delayDebounceFn); // Clear timeout if user types again
+    }, [searchQuery]);
 
     const handleFileChange = (event) => {
         const selectedFile = event.target.files[0];
@@ -97,14 +145,23 @@ function UploadForm() {
     return (
         <div className="container mt-5">
             <h2 className="text-center mb-4">Get insight from your Student</h2>
-            {successMessage && (
+            {/* {successMessage && (
                 <div className="alert alert-success alert-dismissible fade show" role="alert">
                     {successMessage}
                     <button type="button" className="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
-            )}
+            )} */}
            
             <div className="d-flex justify-content-end mb-3">
+            <div className="w-75 me-auto">
+                <input 
+                    type="text" 
+                    className="form-control w-25" 
+                    placeholder="🔍Search by course" 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)} 
+                />
+            </div>
                 <button className="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">
                     Add Feedback
                 </button>
@@ -186,38 +243,61 @@ function UploadForm() {
                     </tr>
                 </thead>
                 <tbody>
-                    {fileList.length > 0 ? (
+                    {fileList?.length > 0 ? (
                         fileList.map((file, index) => (
-                        <tr key={file.file_id || index}>
-                            <td>{index + 1}</td>
-                            <td>{file.coursename}</td>
-                            <td>{file.filename}</td>
-                            <td>{file.upload_at ? new Date(file.upload_at).toLocaleDateString() : "N/A"}</td>
-                            <td>
-                                <div className="progress">
-                                    <div
-                                        className={`progress-bar ${file.statusprocess < 100 ? "progress-bar-striped progress-bar-animated" : "bg-success"}`}
-                                        role="progressbar"
-                                        style={{ width: `${file.statusprocess}%` }}
-                                    >
-                                        {file.statusprocess}%
+                            <tr key={file.fileid || index}>
+                                <td>{index + 1}</td>
+                                <td>{file.coursename}</td>
+                                <td>{file.filename}</td>
+                                <td>{file.uploaded_at ? new Date(file.uploaded_at).toLocaleDateString() : "N/A"}</td>
+
+                                <td>
+                                    <div className="progress">
+                                        <div
+                                            className={`progress-bar ${file.statusprocess < 100 ? "progress-bar-striped progress-bar-animated" : "bg-success"}`}
+                                            role="progressbar"
+                                            style={{ width: `${file.statusprocess}%` }}
+                                        >
+                                            {file.statusprocess}%
+                                        </div>
                                     </div>
-                                </div>
-                            </td>
-
-
-                            <td>
-                            <button className="btn btn-info btn-sm me-2">Results</button>
-                            <button className="btn btn-danger btn-sm">Delete</button>
-                            </td>
-                        </tr>
+                                </td>
+                                <td>
+                                    <button className="btn btn-info btn-sm me-2">Results</button>
+                                    <button
+                                        className="btn btn-danger btn-sm"
+                                        onClick={() => handleDelete(file.fileid)} // Call handleDelete on click with file_id
+                                    >
+                                        Delete
+                                    </button>
+                                </td>
+                            </tr>
                         ))
                     ) : (
                         <tr>
-                        <td colSpan="5" className="text-center">No files uploaded yet.</td>
+                            <td colSpan="6" className="text-center">No files uploaded yet.</td>
                         </tr>
                     )}
                 </tbody>
+                <div className="d-flex justify-content-center mt-3">
+                    <button 
+                        className="btn btn-secondary mx-2" 
+                        disabled={currentPage === 1} 
+                        onClick={() => fetchFiles("", currentPage - 1)}
+                    >
+                        ‹
+                    </button>
+
+                    <span>{currentPage} / {totalPages}</span>
+
+                    <button 
+                        className="btn btn-secondary mx-2" 
+                        disabled={currentPage === totalPages} 
+                        onClick={() => fetchFiles("", currentPage + 1)}
+                    >
+                        ›
+                    </button>
+                </div>
             </table>
         </div>
     );

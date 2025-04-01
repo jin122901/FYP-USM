@@ -4,7 +4,7 @@ import datetime
 import pandas as pd
 from flask import Blueprint, request, jsonify,session
 from werkzeug.utils import secure_filename
-from model.file import insert_file_path, fetch_user_files, update_file_status
+from model.file import insert_file_path, fetch_user_files, update_file_status, delete_uploaded_file
 from transformers import pipeline
 from ml_model import sentiment_pipeline 
 from tqdm import tqdm
@@ -183,19 +183,32 @@ def run_sentiment_analysis(file_path, unique_filename, coursename, userid):
 
 @upload_bp.route('/files', methods=['GET'])
 def get_uploaded_files():
-    userid = session.get('user_id')  # User ID exists, so it's not the issue
+    userid = session.get('user_id')
+    search_query = request.args.get("search", "")
+    page = int(request.args.get("page", 1))
+    limit = int(request.args.get("limit", 10))
 
     try:
-        print(f"[DEBUG] Fetching files for user ID: {userid}")  # Check if user ID is correct
+        print(f"[DEBUG] Fetching files for user ID: {userid}")
 
-        files = fetch_user_files(userid)  # Fetch files from database
-        print(f"[DEBUG] Retrieved files: {files}")  # See what is returned
+        files = fetch_user_files(userid,search_query,page,limit)
+        print(f"[DEBUG] Retrieved files: {files}")  # ✅ Now prints dictionaries, not tuples
 
-        # Ensure the response is in JSON format with a key
-        return jsonify({"files": files}), 200  
+        return jsonify({"files": files}), 200  # ✅ Now JSON-compatible
 
     except Exception as e:
-        print(f"[ERROR] {str(e)}")  # Log the exact error
+        print(f"[ERROR] {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 
+@upload_bp.route('/files/deleteFile/<int:file_id>', methods=['DELETE'])
+def delete_file(file_id):
+    try:
+        # Call the function to delete the file from the database and filesystem
+        delete_uploaded_file(file_id)  # Use your existing function with file_id
+
+        # Return success response
+        return jsonify({"success": True, "message": "File deleted successfully."}), 200
+    except Exception as e:
+        # Return error response in case of any failure
+        return jsonify({"success": False, "message": str(e)}), 500
