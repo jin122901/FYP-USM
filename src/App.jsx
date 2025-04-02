@@ -9,7 +9,7 @@ import RegisterPage from "./pages/public/RegisterPage";
 import AdminPage from "./pages/admin/home";
 import UserPage from "./pages/user/home";
 import UploadForm from "./pages/user/uploadfile";
-import resultpage from "./pages/user/result";
+import Resultpage from "./pages/user/result";
 import Footer from "./pages/public/footer";
 import ProtectedRoute from "../backend/routes/protectedroute";
 import Account from "./pages/user/account";
@@ -121,12 +121,12 @@ const App = () => {
                   }
                 />
                 <Route
-                  path="/resultpage"
+                  path="/Resultpage/:fileId"
                   element={
                     <ProtectedRoute allowedRoles={[1]}>
                       <>
                         <UserHeader />
-                        <resultpage />
+                        <Resultpage />
                         <Footer />
                       </>
                     </ProtectedRoute>

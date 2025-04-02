@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
 
 function UploadForm() {
     const [file, setFile] = useState(null);
@@ -10,7 +11,7 @@ function UploadForm() {
     const [searchQuery, setSearchQuery] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
-
+    const navigate = useNavigate();
     useEffect(() => {
         fetchFiles();
     }, []);
@@ -263,7 +264,14 @@ function UploadForm() {
                                     </div>
                                 </td>
                                 <td>
-                                    <button className="btn btn-info btn-sm me-2">Results</button>
+                                    <button 
+                                        className="btn btn-info btn-sm me-2" 
+                                        // disabled={file.statusprocess !== 100}  // Disable if progress is not 100%
+                                        onClick={() => navigate(`/resultpage/${file.fileid}`)} // Pass fileid in URL
+                                    >
+                                    
+                                        Results
+                                    </button>
                                     <button
                                         className="btn btn-danger btn-sm"
                                         onClick={() => handleDelete(file.fileid)} // Call handleDelete on click with file_id

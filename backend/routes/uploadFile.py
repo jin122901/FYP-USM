@@ -4,11 +4,12 @@ import datetime
 import pandas as pd
 from flask import Blueprint, request, jsonify,session
 from werkzeug.utils import secure_filename
-from model.file import insert_file_path, fetch_user_files, update_file_status, delete_uploaded_file
+from model.file import insert_file_path, fetch_user_files, update_file_status, delete_uploaded_file, get_file_details_from_db
 from transformers import pipeline
 from ml_model import sentiment_pipeline 
 from tqdm import tqdm
 import threading
+
 
 
 upload_bp = Blueprint("upload", __name__)
@@ -35,7 +36,7 @@ def validate_and_fix_file_columns(file_path):
     try:
         df = pd.read_csv(file_path) if file_path.endswith(".csv") else pd.read_excel(file_path)
 
-        required_columns = {"Feedback", "Comment", "Review"}
+        required_columns = {"Feedback", "Comment", "Review","review","feedback"}
         found_columns = [col for col in df.columns if col in required_columns]
 
         if not found_columns:
@@ -92,6 +93,10 @@ def save_processed_data(df, original_filename):
     """ Saves processed data with sentiment results and returns the file path """
     unique_filename = f"processed_{secure_filename(original_filename)}"
     processed_file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
+    
+    # Debugging: Print the path to verify
+    print(f"Processed file will be saved to: {processed_file_path}")
+    
     df.to_csv(processed_file_path, index=False)
     return processed_file_path
 
@@ -176,6 +181,7 @@ def run_sentiment_analysis(file_path, unique_filename, coursename, userid):
         df["Sentiment"] = [result["label"] for result in sentiment_results]
 
         print("✅ File path stored in database successfully!")
+        save_processed_data(df,file_path)
         update_file_status("35",unique_filename)
 
     except Exception as e:
@@ -212,3 +218,56 @@ def delete_file(file_id):
     except Exception as e:
         # Return error response in case of any failure
         return jsonify({"success": False, "message": str(e)}), 500
+
+@upload_bp.route("/get_file_details/<fileid>", methods=["GET"])
+def get_file_path(fileid):
+    file_details = get_file_details_from_db(fileid)
+    if file_details:
+        return jsonify(file_details)  # Now includes file_path & course_name
+    return jsonify({"error": "File not found"}), 404
+
+  # Ensure this is set correctly
+
+@upload_bp.route('/read-csv', methods=['GET'])
+def read_csv():
+    file_path = request.args.get('filePath')
+
+    if not file_path:
+        return jsonify({'error': 'File path is missing'}), 400
+
+    # Extract only the filename (prevent double "uploads/uploads/")
+    filename = os.path.basename(file_path)
+
+    # Build the correct full path
+    full_path = os.path.join(UPLOAD_FOLDER, filename)
+
+    # Debugging output
+    print("🚀 Fixed UPLOAD_FOLDER:", UPLOAD_FOLDER)
+    print("✅ Requested file_path:", file_path)
+    print("✅ Full path Flask is checking:", full_path)
+
+    if not os.path.exists(full_path):
+        print("❌ File NOT FOUND at:", full_path)
+        return jsonify({'error': f'File not found: {full_path}'}), 404
+
+    try:
+        df = pd.read_csv(full_path)
+        row_count = len(df)  # Count total rows
+
+        # Count sentiment labels
+        sentiment_counts = df["Sentiment"].value_counts().to_dict()
+
+        # Ensure all labels are included (even if 0)
+        result = {
+            "negative": sentiment_counts.get("LABEL_0", 0),
+            "neutral": sentiment_counts.get("LABEL_1", 0),
+            "positive": sentiment_counts.get("LABEL_2", 0),
+            "totalRows": row_count  # Add total row count
+        }
+
+        return jsonify(result)
+        
+        
+    except Exception as e:
+        print("❌ Error reading CSV:", str(e))
+        return jsonify({'error': f'Failed to read CSV: {str(e)}'}), 500
