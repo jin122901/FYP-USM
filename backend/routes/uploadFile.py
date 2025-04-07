@@ -2,14 +2,21 @@ import os
 import uuid
 import datetime
 import pandas as pd
-from flask import Blueprint, request, jsonify,session
+from flask import Blueprint, request, jsonify,session, send_file
 from werkzeug.utils import secure_filename
 from model.file import insert_file_path, fetch_user_files, update_file_status, delete_uploaded_file, get_file_details_from_db
 from transformers import pipeline
-from ml_model import sentiment_pipeline 
+from ml_model import sentiment_pipeline,topic_names, kmeans 
 from tqdm import tqdm
 import threading
-
+from sentence_transformers import SentenceTransformer
+from collections import Counter
+import re
+import io
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+import google.generativeai as genai
+from flask import current_app as app
 
 
 upload_bp = Blueprint("upload", __name__)
@@ -89,6 +96,28 @@ def perform_sentiment_analysis(feedback_list, batch_size=16):
     
     return predictions
 
+bert_model = SentenceTransformer("all-MiniLM-L6-v2")
+def classify_topics(feedback_list):
+    """
+    Assigns topics to feedback using a pre-trained KMeans model and SentenceTransformer.
+
+    Args:
+        feedback_list (list): List of feedback texts.
+        kmeans_model (KMeans): Preloaded KMeans clustering model.
+        topic_names (dict): Dictionary mapping cluster labels to topic names.
+
+    Returns:
+        list: Assigned topic names for each feedback.
+    """
+    topics = []
+    for feedback in tqdm(feedback_list, desc="🔍 Assigning Topics"):
+        embedding = bert_model.encode(feedback, convert_to_tensor=True).cpu().numpy().reshape(1, -1)
+        cluster = kmeans.predict(embedding)[0]  # Predict cluster
+        assigned_topic = topic_names.get(str(cluster), "Unknown Topic")
+        topics.append(assigned_topic)
+    
+    return topics
+
 def save_processed_data(df, original_filename):
     """ Saves processed data with sentiment results and returns the file path """
     unique_filename = f"processed_{secure_filename(original_filename)}"
@@ -99,7 +128,6 @@ def save_processed_data(df, original_filename):
     
     df.to_csv(processed_file_path, index=False)
     return processed_file_path
-
 
 @upload_bp.route('/upload', methods=['POST'])
 def upload_file():
@@ -155,7 +183,7 @@ def upload_file():
     threading.Thread(target=run_sentiment_analysis, args=(file_path, unique_filename, coursename, userid)).start()
     return jsonify(response), 200
 
-
+    
 def run_sentiment_analysis(file_path, unique_filename, coursename, userid):
     try:
         print("🚀 Starting sentiment analysis...")
@@ -170,22 +198,108 @@ def run_sentiment_analysis(file_path, unique_filename, coursename, userid):
             os.remove(file_path)
             return
 
-        # Extract feedback list
+        # Filter non-English feedback
+        import langdetect
+        
+        def is_english(text):
+            try:
+                if not isinstance(text, str) or text.strip() == '':
+                    return False
+                    
+                # Detect language
+                lang = langdetect.detect(text)
+                return lang == 'en'
+            except:
+                # If detection fails, we'll exclude the text
+                return False
+        
+        # Apply language filter and inform about the filtering
+        total_feedback = len(df)
+        df = df[df["Feedback"].apply(is_english)]
+        english_feedback = len(df)
+        
+        if total_feedback > english_feedback:
+            print(f"ℹ Filtered out {total_feedback - english_feedback} non-English feedback entries.")
+    
+        if english_feedback == 0:
+            print("❌ No English feedback found. Analysis cannot proceed.")
+            os.remove(file_path)
+            update_file_status("failed", unique_filename)
+            return
+
+        # Extract feedback list (now English only)
         feedback_list = df["Feedback"].astype(str).tolist()
 
         # Perform sentiment analysis
         sentiment_results = perform_sentiment_analysis(feedback_list)
+        
         print("✅ Sentiment analysis completed successfully!")
-
+       
         # Add sentiment results to DataFrame
         df["Sentiment"] = [result["label"] for result in sentiment_results]
+        update_file_status("35","", unique_filename)
 
-        print("✅ File path stored in database successfully!")
-        save_processed_data(df,file_path)
-        update_file_status("35",unique_filename)
+        # Perform topic classification
+        df["Predicted_Topic"] = classify_topics(feedback_list)
+        print("✅ Topic mining completed!")
+        # Update database status
+        update_file_status("60","", unique_filename)
+        save_processed_data(df, file_path)
+        processed_filename = f"processed_uploads_{unique_filename}"
+        recome = generaterecommendation(processed_filename)
+        update_file_status("100",recome, unique_filename)
+
+        
 
     except Exception as e:
-        print(f"❌ Error during sentiment analysis: {e}")
+        print(f"❌ Error during analysis: {e}")
+
+def generaterecommendation(filepath):
+    # Remove this line - we already have an app context from the caller
+    # with app.app_context():  # <-- REMOVE THIS
+
+    genai.configure(api_key="AIzaSyDWMCleTLS_bk4SWtnmUj1k_nFIPt2LClM")
+    model = genai.GenerativeModel("gemini-2.0-flash")
+    file_path = filepath or request.args.get('filePath')
+
+    if not file_path:
+        return jsonify({'error': 'File path is missing'}), 400
+
+    filename = os.path.basename(file_path)
+    full_path = os.path.join(UPLOAD_FOLDER, filename)
+
+    if not os.path.exists(full_path):
+        return jsonify({'error': f'File not found: {full_path}'}), 404
+
+    try:
+        # Read the CSV file
+        df = pd.read_csv(full_path)
+        print(full_path)
+        # Filter negative feedback (Sentiment = "LABEL_0")
+        negative_feedback = df[df['Sentiment'] == "LABEL_0"]["Feedback"].tolist()
+
+        if not negative_feedback:
+            return jsonify({'message': 'No negative feedback found in the dataset!'}), 200
+
+        # Join negative feedback into a single text block
+        feedback_text = "\n".join(negative_feedback)
+
+        # Generate recommendation using Gemini API
+        prompt = f"""
+        You are an AI analyzing student feedback.
+        Below is a collection of negative reviews from students:
+
+        {feedback_text}
+
+        Based on this, provide specific recommendations for me to improve student satisfaction in 100 words.
+        """
+        response = model.generate_content(prompt)
+
+        # Return the generated recommendation
+        return response.text  # Changed to return just the text instead of jsonify response
+
+    except Exception as e:
+        return f"Error processing file: {str(e)}"  # Changed to return just error text
 
 @upload_bp.route('/files', methods=['GET'])
 def get_uploaded_files():
@@ -212,10 +326,11 @@ def delete_file(file_id):
     try:
         # Call the function to delete the file from the database and filesystem
         delete_uploaded_file(file_id)  # Use your existing function with file_id
-
+        
         # Return success response
         return jsonify({"success": True, "message": "File deleted successfully."}), 200
     except Exception as e:
+        print("❌ Error:", str(e))
         # Return error response in case of any failure
         return jsonify({"success": False, "message": str(e)}), 500
 
@@ -235,19 +350,10 @@ def read_csv():
     if not file_path:
         return jsonify({'error': 'File path is missing'}), 400
 
-    # Extract only the filename (prevent double "uploads/uploads/")
     filename = os.path.basename(file_path)
-
-    # Build the correct full path
     full_path = os.path.join(UPLOAD_FOLDER, filename)
 
-    # Debugging output
-    print("🚀 Fixed UPLOAD_FOLDER:", UPLOAD_FOLDER)
-    print("✅ Requested file_path:", file_path)
-    print("✅ Full path Flask is checking:", full_path)
-
     if not os.path.exists(full_path):
-        print("❌ File NOT FOUND at:", full_path)
         return jsonify({'error': f'File not found: {full_path}'}), 404
 
     try:
@@ -256,18 +362,84 @@ def read_csv():
 
         # Count sentiment labels
         sentiment_counts = df["Sentiment"].value_counts().to_dict()
+        topic_counts = df["Predicted_Topic"].value_counts().to_dict()
 
-        # Ensure all labels are included (even if 0)
+        # Sentiment distribution per topic
+        sentiment_by_topic = (
+            df.groupby("Predicted_Topic")["Sentiment"]
+            .value_counts()
+            .unstack(fill_value=0)
+            .to_dict("index")
+        )
+
         result = {
-            "negative": sentiment_counts.get("LABEL_0", 0),
-            "neutral": sentiment_counts.get("LABEL_1", 0),
-            "positive": sentiment_counts.get("LABEL_2", 0),
-            "totalRows": row_count  # Add total row count
+            "sentiment": {
+                "negative": sentiment_counts.get("LABEL_0", 0),
+                "neutral": sentiment_counts.get("LABEL_1", 0),
+                "positive": sentiment_counts.get("LABEL_2", 0),
+                "totalRows": row_count
+            },
+            "topics": topic_counts,
+            "sentiment_by_topic": sentiment_by_topic,
+            "word_cloud_url": "/wordcloud-image"  # URL to fetch word cloud dynamically
         }
 
         return jsonify(result)
-        
-        
+
     except Exception as e:
-        print("❌ Error reading CSV:", str(e))
-        return jsonify({'error': f'Failed to read CSV: {str(e)}'}), 500
+        return jsonify({'error': str(e)}), 500
+
+
+@upload_bp.route('/wordcloud-image', methods=['GET'])
+def generate_wordcloud():
+    file_path = request.args.get("filePath")
+    sentiment_filter = request.args.get("sentiment")  # Accept sentiment type
+
+    if not file_path:
+        return jsonify({"error": "File path is missing"}), 400
+
+    filename = os.path.basename(file_path)
+    full_path = os.path.join(UPLOAD_FOLDER, filename)
+
+    if not os.path.exists(full_path):
+        return jsonify({"error": "File not found"}), 404
+
+    df = pd.read_csv(full_path)
+
+    if "Feedback" not in df.columns or "Sentiment" not in df.columns:
+        return jsonify({"error": "Missing required columns"}), 400
+
+    # Filter by sentiment
+    sentiment_map = {"negative": "LABEL_0", "neutral": "LABEL_1", "positive": "LABEL_2"}
+    if sentiment_filter and sentiment_filter in sentiment_map:
+        df = df[df["Sentiment"] == sentiment_map[sentiment_filter]]
+
+    # Filter out rows with less than 3 words
+    df["word_count"] = df["Feedback"].fillna("").apply(lambda x: len(re.findall(r'\b\w+\b', x)))
+    df = df[df["word_count"] >= 3]
+
+    feedback_column = df["Feedback"].dropna()
+    all_feedback_text = " ".join(feedback_column)
+
+    # Tokenize and clean text
+    words = re.findall(r"\b\w+\b", all_feedback_text.lower())
+    excluded_words = {"lecturer", "course", "students", "teaching",'the', 'to', 'and', 'a', 'of', 'i', 'this', 'for', 'is', 'it', 'in', 
+        'you', 'that', 'was', 'with', 'on', 'as', 'an', 'are', 'be', 'my', 
+        'what', 'can', 'have', 'but', 'not', 'will', 'from', 'also', 'who', 's',
+        'at', 'by', 'or', 'we', 'me', 'your', 'their', 'our'}
+    filtered_words = [word for word in words if word not in excluded_words]
+    word_counts = Counter(filtered_words)
+
+    # Generate word cloud
+    wordcloud = WordCloud(width=800, height=400, background_color="white").generate_from_frequencies(word_counts)
+
+    # Save image to memory
+    img_io = io.BytesIO()
+    plt.figure(figsize=(10, 5))
+    plt.imshow(wordcloud, interpolation="bilinear")
+    plt.axis("off")
+    plt.savefig(img_io, format="PNG", bbox_inches="tight", pad_inches=0)
+    img_io.seek(0)
+    
+    return send_file(img_io, mimetype="image/png")
+
