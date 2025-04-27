@@ -266,7 +266,7 @@ function UploadForm() {
                                 <td>
                                     <button 
                                         className="btn btn-info btn-sm me-2" 
-                                        // disabled={file.statusprocess !== 100}  // Disable if progress is not 100%
+                                        disabled={file.statusprocess !== 100}  // Disable if progress is not 100%
                                         onClick={() => navigate(`/resultpage/${file.fileid}`)} // Pass fileid in URL
                                     >
                                     

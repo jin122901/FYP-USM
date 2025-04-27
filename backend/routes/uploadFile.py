@@ -17,6 +17,8 @@ from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import google.generativeai as genai
 from flask import current_app as app
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+from nltk.corpus import stopwords
 
 
 upload_bp = Blueprint("upload", __name__)
@@ -393,7 +395,7 @@ def read_csv():
 @upload_bp.route('/wordcloud-image', methods=['GET'])
 def generate_wordcloud():
     file_path = request.args.get("filePath")
-    sentiment_filter = request.args.get("sentiment")  # Accept sentiment type
+    sentiment_filter = request.args.get("sentiment")
 
     if not file_path:
         return jsonify({"error": "File path is missing"}), 400
@@ -409,36 +411,106 @@ def generate_wordcloud():
     if "Feedback" not in df.columns or "Sentiment" not in df.columns:
         return jsonify({"error": "Missing required columns"}), 400
 
-    # Filter by sentiment
+    # Filter by sentiment if not "all"
     sentiment_map = {"negative": "LABEL_0", "neutral": "LABEL_1", "positive": "LABEL_2"}
-    if sentiment_filter and sentiment_filter in sentiment_map:
+    if sentiment_filter and sentiment_filter in sentiment_map and sentiment_filter != "all":
         df = df[df["Sentiment"] == sentiment_map[sentiment_filter]]
 
     # Filter out rows with less than 3 words
     df["word_count"] = df["Feedback"].fillna("").apply(lambda x: len(re.findall(r'\b\w+\b', x)))
     df = df[df["word_count"] >= 3]
 
-    feedback_column = df["Feedback"].dropna()
-    all_feedback_text = " ".join(feedback_column)
-
-    # Tokenize and clean text
-    words = re.findall(r"\b\w+\b", all_feedback_text.lower())
-    excluded_words = {"lecturer", "course", "students", "teaching",'the', 'to', 'and', 'a', 'of', 'i', 'this', 'for', 'is', 'it', 'in', 
-        'you', 'that', 'was', 'with', 'on', 'as', 'an', 'are', 'be', 'my', 
-        'what', 'can', 'have', 'but', 'not', 'will', 'from', 'also', 'who', 's',
-        'at', 'by', 'or', 'we', 'me', 'your', 'their', 'our'}
-    filtered_words = [word for word in words if word not in excluded_words]
-    word_counts = Counter(filtered_words)
-
-    # Generate word cloud
-    wordcloud = WordCloud(width=800, height=400, background_color="white").generate_from_frequencies(word_counts)
+    # Initialize sentiment analyzer
+    sia = SentimentIntensityAnalyzer()
+    
+    # Get our custom stop words
+    custom_stopwords = {"lecturer", "lectures", "course", "students", "teaching"}
+    stop_words = set(stopwords.words('english')).union(custom_stopwords)
+    
+    # Process each feedback to extract and classify words by sentiment
+    positive_words = []
+    neutral_words = []
+    negative_words = []
+    
+    for feedback in df["Feedback"].dropna():
+        words = re.findall(r"\b\w+\b", feedback.lower())
+        
+        for word in words:
+            # Skip stopwords and very short words
+            if word in stop_words or len(word) <= 2:
+                continue
+                
+            # Get sentiment score for this word
+            sentiment_score = sia.polarity_scores(word)
+            
+            # Classify word based on sentiment score
+            if sentiment_score['compound'] >= 0.05:
+                positive_words.append(word)
+            elif sentiment_score['compound'] <= -0.05:
+                negative_words.append(word)
+            else:
+                neutral_words.append(word)
+    
+    # Determine which words to use based on sentiment filter
+    if sentiment_filter == "positive":
+        word_counts = Counter(positive_words)
+        color_func = lambda *args, **kwargs: "green"  # Use green for positive words
+    elif sentiment_filter == "negative":
+        word_counts = Counter(negative_words)
+        color_func = lambda *args, **kwargs: "red"    # Use red for negative words
+    elif sentiment_filter == "neutral":
+        word_counts = Counter(neutral_words)
+        color_func = lambda *args, **kwargs: "gray"   # Use gray for neutral words
+    else:  # "all" or any other value
+        # Combine all words but keep their original sentiment colors
+        all_words = []
+        all_words.extend(positive_words)
+        all_words.extend(neutral_words)
+        all_words.extend(negative_words)
+        word_counts = Counter(all_words)
+        
+        # Custom color function to color words by sentiment
+        def color_func(word, font_size, position, orientation, random_state=None, **kwargs):
+            sentiment_score = sia.polarity_scores(word)
+            if sentiment_score['compound'] >= 0.05:
+                return "green"
+            elif sentiment_score['compound'] <= -0.05:
+                return "red"
+            else:
+                return "gray"
+    
+    # If we don't have enough words, use a generic approach as fallback
+    if len(word_counts) < 10:
+        all_feedback_text = " ".join(df["Feedback"].dropna())
+        words = re.findall(r"\b\w+\b", all_feedback_text.lower())
+        word_counts = Counter([word for word in words if word not in stop_words and len(word) > 2])
+    
+    # Generate the word cloud with appropriate colors
+    if sentiment_filter in ["positive", "negative", "neutral"]:
+        wordcloud = WordCloud(
+            width=800, 
+            height=400, 
+            background_color="white",
+            color_func=color_func,
+            max_words=100
+        ).generate_from_frequencies(word_counts)
+    else:
+        # For "all", use color_func to distinguish sentiment
+        wordcloud = WordCloud(
+            width=800, 
+            height=400, 
+            background_color="white",
+            color_func=color_func,
+            max_words=100
+        ).generate_from_frequencies(word_counts)
 
     # Save image to memory
     img_io = io.BytesIO()
     plt.figure(figsize=(10, 5))
     plt.imshow(wordcloud, interpolation="bilinear")
     plt.axis("off")
-    plt.savefig(img_io, format="PNG", bbox_inches="tight", pad_inches=0)
+    plt.tight_layout(pad=0)
+    plt.savefig(img_io, format="PNG", bbox_inches="tight")
     img_io.seek(0)
     
     return send_file(img_io, mimetype="image/png")
