@@ -13,12 +13,14 @@ from sentence_transformers import SentenceTransformer
 from collections import Counter
 import re
 import io
+import json
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import google.generativeai as genai
 from flask import current_app as app
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from nltk.corpus import stopwords
+
 
 
 upload_bp = Blueprint("upload", __name__)
@@ -41,50 +43,262 @@ def generate_unique_filename(filename):
     return f"{timestamp}_{unique_id}.{file_ext}"
 
 def validate_and_fix_file_columns(file_path):
-    """Validate and modify the uploaded file columns to ensure 'Feedback' is present."""
+    """Validate the uploaded file has valid columns"""
     try:
         df = pd.read_csv(file_path) if file_path.endswith(".csv") else pd.read_excel(file_path)
-
-        required_columns = {"Feedback", "Comment", "Review","review","feedback"}
-        found_columns = [col for col in df.columns if col in required_columns]
-
-        if not found_columns:
-            return False, "File must contain at least one of these columns: Feedback, Comment, Review."
-
-        # Rename the first found column to "Feedback" if it's not already "Feedback"
-        if "Feedback" not in df.columns:
-            df.rename(columns={found_columns[0]: "Feedback"}, inplace=True)
-
-        # Save the modified file back
-        if file_path.endswith(".csv"):
-            df.to_csv(file_path, index=False)
-        else:
-            df.to_excel(file_path, index=False)
-
+        
+        # Basic validation - file should have at least one column
+        if len(df.columns) == 0:
+            return False, "File has no columns."
+            
         return True, None  # Validation success
-
     except Exception as e:
         return False, f"Error processing file: {str(e)}"
     
 def process_file(file_path):
-    """ Reads the uploaded CSV/XLSX file, truncates long feedback, and returns a DataFrame with a progress bar """
+    """ Reads the uploaded CSV/XLSX file and returns a DataFrame with all columns """
     try:
         if file_path.endswith(".csv"):
             df = pd.read_csv(file_path)
         else:
             df = pd.read_excel(file_path)
     except Exception as e:
-        return None, f"Failed to read file: {str(e)}"
+        return None, None, f"Failed to read file: {str(e)}"
     
-    # ✅ Ensure "Feedback" column exists
-    if "Feedback" not in df.columns:
-        return None, "Missing 'Feedback' column"
+    # Return the dataframe and all column names
+    columns = df.columns.tolist()
+    return df, columns, None
 
-    # ✅ Convert to string and truncate to max 512 characters with progress bar
-    tqdm.pandas(desc="📝 Processing Feedback")
-    df["Feedback"] = df["Feedback"].astype(str).progress_apply(lambda x: x[:512])
+@upload_bp.route('/get_columns', methods=['GET'])
+def get_file_columns():
+    file_path = request.args.get('filePath')
+    
+    if not file_path:
+        return jsonify({'error': 'File path is missing'}), 400
+        
+    filename = os.path.basename(file_path)
+    full_path = os.path.join(UPLOAD_FOLDER, filename)
+    
+    if not os.path.exists(full_path):
+        return jsonify({'error': f'File not found: {full_path}'}), 404
+    
+    try:
+        # Read file and get columns
+        df = pd.read_csv(full_path) if full_path.endswith('.csv') else pd.read_excel(full_path)
+        columns = df.columns.tolist()
+        
+        # Return preview data for the first 5 rows
+        preview = df.head(5).to_dict('records')
+        
+        return jsonify({ 
+            'columns': columns,
+            'preview': preview,
+            'rowCount': len(df)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-    return df, None
+def save_processed_data(df, original_filename):
+    """ Saves processed data with sentiment results and returns the file path """
+    unique_filename = f"processed_{secure_filename(original_filename)}"
+    processed_file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
+    
+    # Debugging: Print the path to verify
+    print(f"Processed file will be saved to: {processed_file_path}")
+    
+    df.to_csv(processed_file_path, index=False)
+    return processed_file_path
+
+@upload_bp.route('/preview_file', methods=['POST'])
+def preview_file():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files['file']
+    
+    if not file or file.filename == "":
+        return jsonify({"error": "No selected file"}), 400
+
+    if not allowed_file(file.filename):
+        return jsonify({"error": "Invalid file type. Allowed: CSV, XLSX"}), 400
+
+    try:
+        # Read file directly from memory without saving
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(file)
+        else:
+            df = pd.read_excel(file)
+        
+        # Get column information
+        columns = df.columns.tolist()
+        
+        # Get preview of first 5 rows
+        preview = df.head(5).to_dict('records')
+        
+        return jsonify({
+            'columns': columns,
+            'preview': preview,
+            'rowCount': len(df),
+            'filename': file.filename
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"error": f"Error reading file: {str(e)}"}), 500
+
+@upload_bp.route('/upload', methods=['POST'])
+def upload_file():
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+        
+    file = request.files['file']
+    
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    
+    # Get the columns data from the form
+    columns_data = request.form.get('columns', '[]')
+    print(f"Received columns data: {columns_data}")  # Debug print
+    
+    coursename = request.form.get('coursename', '')
+    if not coursename:
+        return jsonify({'error': 'Course name is required'}), 400
+
+    # Handle different possible formats for columns
+    try:
+        if isinstance(columns_data, str):
+            selected_columns = json.loads(columns_data)
+        else:
+            selected_columns = columns_data
+            
+        # Ensure it's a list
+        if not isinstance(selected_columns, list):
+            selected_columns = [selected_columns]
+            
+        print(f"Parsed columns: {selected_columns}")  # Debug print
+    except Exception as e:
+        print(f"Error parsing columns: {str(e)}")
+        selected_columns = []
+        
+    if not selected_columns or len(selected_columns) == 0:
+        return jsonify({'error': 'No columns selected for analysis'}), 400
+    
+    # Get full path if only filename was provided
+    original_filename = secure_filename(file.filename)
+    unique_filename = generate_unique_filename(original_filename)
+    file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
+    
+    # First save the file
+    try:
+        file.save(file_path)
+        print("✅ File saved successfully!")
+    except Exception as e:
+        print(f"❌ Error saving file: {e}")
+        return jsonify({"error": f"File saving failed: {str(e)}"}), 500
+    
+    # Now check if it was saved correctly
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File could not be saved properly'}), 500
+    
+    # Start analysis in background thread
+    userid = session.get('user_id')
+    
+    response = {"message": "File uploaded successfully!", "file_path": file_path}
+    threading.Thread(
+        target=run_sentiment_analysis_on_columns, 
+        args=(file_path, unique_filename, coursename, userid, selected_columns)
+    ).start()
+    
+    return jsonify(response), 200
+
+def run_sentiment_analysis_on_columns(file_path, filename, coursename, userid, selected_columns):
+    try:
+        print(f"🚀 Starting sentiment analysis on columns: {selected_columns}...")
+        insert_file_path(filename, filename, coursename, userid)
+        # Update file status in database
+        update_file_status("10", "", filename)
+        
+        # Read the file
+        df = pd.read_csv(file_path) if file_path.endswith('.csv') else pd.read_excel(file_path)
+        
+        # Process each selected column
+        for i, column in enumerate(selected_columns):
+            print(f"Processing column: {column}")
+            
+            # Create a sentiment result column name (adjacent to original column)
+            col_index = df.columns.get_loc(column)
+            
+            # Convert to string and truncate
+            df[column] = df[column].astype(str).apply(lambda x: x[:512])
+            
+            # Filter non-English feedback if needed
+            import langdetect
+            
+            def is_english(text):
+                try:
+                    if not isinstance(text, str) or text.strip() == '':
+                        return False
+                    lang = langdetect.detect(text)
+                    return lang == 'en'
+                except:
+                    return False
+            
+            # Create a mask for English text
+            english_mask = df[column].apply(is_english)
+            
+            # Get English feedback for analysis
+            feedback_list = df.loc[english_mask, column].tolist()
+            
+            if not feedback_list:
+                print(f"No English text found in column '{column}'")
+                continue
+            
+            # Perform sentiment analysis on this column
+            sentiment_results = perform_sentiment_analysis(feedback_list)
+            
+            # Map results back to the original dataframe
+            sentiment_column = f"Sentiment_{column}"
+            df.loc[english_mask, sentiment_column] = [result["label"] for result in sentiment_results]
+            
+            # Fill non-English rows with "N/A"
+            df.loc[~english_mask, sentiment_column] = "N/A"
+            
+            # Insert the sentiment column right after the original column
+            columns = df.columns.tolist()
+            df = df.reindex(columns=columns[:col_index+1] + [sentiment_column] + 
+                             [c for c in columns if c != sentiment_column and c not in columns[:col_index+1]])
+            
+            # Perform topic classification
+            topic_column = f"Topic_{column}"
+            df.loc[english_mask, topic_column] = classify_topics([text for text in feedback_list])
+            df.loc[~english_mask, topic_column] = "N/A"
+            
+            # Insert the topic column after the sentiment column
+            columns = df.columns.tolist()
+            sentiment_idx = columns.index(sentiment_column)
+            df = df.reindex(columns=columns[:sentiment_idx+1] + [topic_column] + 
+                             [c for c in columns if c != topic_column and c not in columns[:sentiment_idx+1]])
+            
+            # Update progress
+            progress = int(((i + 1) / len(selected_columns)) * 90)  # Up to 90% for processing
+            update_file_status(str(progress), "", filename)
+        
+        # Save processed data
+        processed_filename = f"processed_{filename}"
+        processed_path = os.path.join(UPLOAD_FOLDER, processed_filename)
+        df.to_csv(processed_path, index=False)
+        
+        # Generate recommendation based on all analyzed columns
+        recome = generate_combined_recommendation(processed_path, selected_columns)
+        
+        # Update file status to complete
+        update_file_status("100", recome, filename)
+        
+        print("✅ Analysis completed for all selected columns!")
+        
+    except Exception as e:
+        print(f"❌ Error during analysis: {e}")
+        update_file_status("failed", str(e), filename)
 
 def perform_sentiment_analysis(feedback_list, batch_size=16):
     """ Runs sentiment analysis on a list of feedback texts with a progress bar """
@@ -120,189 +334,45 @@ def classify_topics(feedback_list):
     
     return topics
 
-def save_processed_data(df, original_filename):
-    """ Saves processed data with sentiment results and returns the file path """
-    unique_filename = f"processed_{secure_filename(original_filename)}"
-    processed_file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
-    
-    # Debugging: Print the path to verify
-    print(f"Processed file will be saved to: {processed_file_path}")
-    
-    df.to_csv(processed_file_path, index=False)
-    return processed_file_path
-
-@upload_bp.route('/upload', methods=['POST'])
-def upload_file():
-    print("\n🔹 [UPLOAD FILE REQUEST RECEIVED] 🔹")
-
-    # Check if 'file' exists in the request
-    if 'file' not in request.files:
-        print("❌ Error: No file found in request")
-        return jsonify({"error": "No file provided"}), 400
-
-    file = request.files['file']
-    coursename = request.form.get("coursename")
-    userid = session.get('user_id')
-
-    # Check if the file is empty or has no name
-    if not file or file.filename == "":
-        print("❌ Error: No selected file")
-        return jsonify({"error": "No selected file"}), 400
-
-    # Check if the file type is allowed
-    if not allowed_file(file.filename):
-        print(f"❌ Error: Invalid file type - {file.filename}")
-        return jsonify({"error": "Invalid file type. Allowed: CSV, XLSX"}), 400
-
-    # Check if user is logged in
-    if not userid:
-        print("❌ Error: User not logged in")
-        return jsonify({"error": "User not logged in"}), 401
-
-    # Generate a unique filename
-    original_filename = secure_filename(file.filename)
-    unique_filename = generate_unique_filename(original_filename)
-    file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
-
-    # Save file
-    try:
-        file.save(file_path)
-        print("✅ File saved successfully!")
-    except Exception as e:
-        print(f"❌ Error saving file: {e}")
-        return jsonify({"error": "File saving failed"}), 500
-
-    # Validate file content
-    is_valid, error_msg = validate_and_fix_file_columns(file_path)
-    if not is_valid:
-        print(f"❌ File Validation Failed: {error_msg}")
-        os.remove(file_path)  # Remove invalid file
-        return jsonify({"error": error_msg}), 400
-
-    # ✅ **Return success response immediately**
-    
-    response = {"message": "File uploaded successfully!", "file_path": file_path}
-    threading.Thread(target=run_sentiment_analysis, args=(file_path, unique_filename, coursename, userid)).start()
-    return jsonify(response), 200
-
-    
-def run_sentiment_analysis(file_path, unique_filename, coursename, userid):
-    try:
-        print("🚀 Starting sentiment analysis...")
-        # Save processed data
-
-        # Store file path in database
-        insert_file_path(unique_filename, unique_filename, coursename, userid)
-        # Process file to extract feedback
-        df, error_msg = process_file(file_path)
-        if df is None:
-            print(f"❌ File Processing Error: {error_msg}")
-            os.remove(file_path)
-            return
-
-        # Filter non-English feedback
-        import langdetect
-        
-        def is_english(text):
-            try:
-                if not isinstance(text, str) or text.strip() == '':
-                    return False
-                    
-                # Detect language
-                lang = langdetect.detect(text)
-                return lang == 'en'
-            except:
-                # If detection fails, we'll exclude the text
-                return False
-        
-        # Apply language filter and inform about the filtering
-        total_feedback = len(df)
-        df = df[df["Feedback"].apply(is_english)]
-        english_feedback = len(df)
-        
-        if total_feedback > english_feedback:
-            print(f"ℹ Filtered out {total_feedback - english_feedback} non-English feedback entries.")
-    
-        if english_feedback == 0:
-            print("❌ No English feedback found. Analysis cannot proceed.")
-            os.remove(file_path)
-            update_file_status("failed", unique_filename)
-            return
-
-        # Extract feedback list (now English only)
-        feedback_list = df["Feedback"].astype(str).tolist()
-
-        # Perform sentiment analysis
-        sentiment_results = perform_sentiment_analysis(feedback_list)
-        
-        print("✅ Sentiment analysis completed successfully!")
-       
-        # Add sentiment results to DataFrame
-        df["Sentiment"] = [result["label"] for result in sentiment_results]
-        update_file_status("35","", unique_filename)
-
-        # Perform topic classification
-        df["Predicted_Topic"] = classify_topics(feedback_list)
-        print("✅ Topic mining completed!")
-        # Update database status
-        update_file_status("60","", unique_filename)
-        save_processed_data(df, file_path)
-        processed_filename = f"processed_uploads_{unique_filename}"
-        recome = generaterecommendation(processed_filename)
-        update_file_status("100",recome, unique_filename)
-
-        
-
-    except Exception as e:
-        print(f"❌ Error during analysis: {e}")
-
-def generaterecommendation(filepath):
-    # Remove this line - we already have an app context from the caller
-    # with app.app_context():  # <-- REMOVE THIS
-
+def generate_combined_recommendation(filepath, selected_columns):
     genai.configure(api_key="AIzaSyDWMCleTLS_bk4SWtnmUj1k_nFIPt2LClM")
     model = genai.GenerativeModel("gemini-2.0-flash")
-    file_path = filepath or request.args.get('filePath')
-
-    if not file_path:
-        return jsonify({'error': 'File path is missing'}), 400
-
-    filename = os.path.basename(file_path)
-    full_path = os.path.join(UPLOAD_FOLDER, filename)
-
-    if not os.path.exists(full_path):
-        return jsonify({'error': f'File not found: {full_path}'}), 404
-
+    
     try:
         # Read the CSV file
-        df = pd.read_csv(full_path)
-        print(full_path)
-        # Filter negative feedback (Sentiment = "LABEL_0")
-        negative_feedback = df[df['Sentiment'] == "LABEL_0"]["Feedback"].tolist()
-
-        if not negative_feedback:
-            return jsonify({'message': 'No negative feedback found in the dataset!'}), 200
+        df = pd.read_csv(filepath)
+        
+        all_negative_feedback = []
+        
+        # Collect negative feedback from each analyzed column
+        for column in selected_columns:
+            sentiment_column = f"Sentiment_{column}"
+            if sentiment_column in df.columns:
+                negative_feedback = df[df[sentiment_column] == "LABEL_0"][column].tolist()
+                all_negative_feedback.extend(negative_feedback)
+        
+        if not all_negative_feedback:
+            return "No negative feedback found in the analyzed columns!"
 
         # Join negative feedback into a single text block
-        feedback_text = "\n".join(negative_feedback)
+        feedback_text = "\n".join(all_negative_feedback)
 
         # Generate recommendation using Gemini API
         prompt = f"""
-        You are an AI analyzing student feedback.
-        Below is a collection of negative reviews from students:
+        You are an AI analyzing feedback.
+        Below is a collection of negative feedback:
 
         {feedback_text}
 
-        Based on this, provide specific recommendations for me to improve student satisfaction in 100 words.
+        Based on this, provide specific recommendations for improvement in 100 words.
         """
         response = model.generate_content(prompt)
 
         # Return the generated recommendation
-        return response.text  # Changed to return just the text instead of jsonify response
-
+        return response.text
     except Exception as e:
-        return f"Error processing file: {str(e)}"  # Changed to return just error text
-
+        return f"Error processing file: {str(e)}"
+    
 @upload_bp.route('/files', methods=['GET'])
 def get_uploaded_files():
     userid = session.get('user_id')
@@ -348,6 +418,7 @@ def get_file_path(fileid):
 @upload_bp.route('/read-csv', methods=['GET'])
 def read_csv():
     file_path = request.args.get('filePath')
+    selected_columns = request.args.getlist('columns')  # Get multiple columns from query params
 
     if not file_path:
         return jsonify({'error': 'File path is missing'}), 400
@@ -360,31 +431,51 @@ def read_csv():
 
     try:
         df = pd.read_csv(full_path)
-        row_count = len(df)  # Count total rows
-
-        # Count sentiment labels
-        sentiment_counts = df["Sentiment"].value_counts().to_dict()
-        topic_counts = df["Predicted_Topic"].value_counts().to_dict()
-
-        # Sentiment distribution per topic
-        sentiment_by_topic = (
-            df.groupby("Predicted_Topic")["Sentiment"]
-            .value_counts()
-            .unstack(fill_value=0)
-            .to_dict("index")
-        )
-
+        row_count = len(df)
+        
+        # Initialize result dictionary
         result = {
-            "sentiment": {
-                "negative": sentiment_counts.get("LABEL_0", 0),
-                "neutral": sentiment_counts.get("LABEL_1", 0),
-                "positive": sentiment_counts.get("LABEL_2", 0),
-                "totalRows": row_count
-            },
-            "topics": topic_counts,
-            "sentiment_by_topic": sentiment_by_topic,
-            "word_cloud_url": "/wordcloud-image"  # URL to fetch word cloud dynamically
+            "totalRows": row_count,
+            "columns": {},
+            "word_cloud_url": "/wordcloud-image"
         }
+
+        # Find all sentiment columns (both original and processed)
+        all_sentiment_cols = [col for col in df.columns if col.startswith('Sentiment_')]
+        
+        # If no specific columns requested, use all found sentiment columns
+        columns_to_process = selected_columns if selected_columns else all_sentiment_cols
+        
+        for col in columns_to_process:
+            if col not in df.columns:
+                continue
+                
+            # Process each sentiment column
+            sentiment_counts = df[col].value_counts().to_dict()
+            
+            # Find corresponding topic column (if exists)
+            topic_col = f"Topic_{col.replace('Sentiment_', '')}"
+            topic_counts = df[topic_col].value_counts().to_dict() if topic_col in df.columns else {}
+            
+            # Sentiment distribution per topic (if topics exist)
+            sentiment_by_topic = {}
+            if topic_col in df.columns:
+                sentiment_by_topic = (
+                    df.groupby(topic_col)[col]
+                    .value_counts()
+                    .unstack(fill_value=0)
+                    .to_dict("index")
+                )
+            
+            result["columns"][col] = {
+                "sentiment": {
+                    "negative": sentiment_counts.get("LABEL_0", 0),
+                    "neutral": sentiment_counts.get("LABEL_1", 0),
+                    "positive": sentiment_counts.get("LABEL_2", 0)
+                },
+                "topics": topic_counts,
+                "sentiment_by_topic": sentiment_by_topic
+            }
 
         return jsonify(result)
 
