@@ -486,7 +486,9 @@ def read_csv():
 @upload_bp.route('/wordcloud-image', methods=['GET'])
 def generate_wordcloud():
     file_path = request.args.get("filePath")
-    sentiment_filter = request.args.get("sentiment")
+    sentiment_filter = request.args.get("sentiment", "all")
+    column_name = request.args.get("column")  # Get the column name parameter
+    topic_filter = request.args.get("topic")  # New parameter for filtering by topic
 
     if not file_path:
         return jsonify({"error": "File path is missing"}), 400
@@ -497,112 +499,175 @@ def generate_wordcloud():
     if not os.path.exists(full_path):
         return jsonify({"error": "File not found"}), 404
 
-    df = pd.read_csv(full_path)
-
-    if "Feedback" not in df.columns or "Sentiment" not in df.columns:
-        return jsonify({"error": "Missing required columns"}), 400
-
-    # Filter by sentiment if not "all"
-    sentiment_map = {"negative": "LABEL_0", "neutral": "LABEL_1", "positive": "LABEL_2"}
-    if sentiment_filter and sentiment_filter in sentiment_map and sentiment_filter != "all":
-        df = df[df["Sentiment"] == sentiment_map[sentiment_filter]]
-
-    # Filter out rows with less than 3 words
-    df["word_count"] = df["Feedback"].fillna("").apply(lambda x: len(re.findall(r'\b\w+\b', x)))
-    df = df[df["word_count"] >= 3]
-
-    # Initialize sentiment analyzer
-    sia = SentimentIntensityAnalyzer()
-    
-    # Get our custom stop words
-    custom_stopwords = {"lecturer", "lectures", "course", "students", "teaching"}
-    stop_words = set(stopwords.words('english')).union(custom_stopwords)
-    
-    # Process each feedback to extract and classify words by sentiment
-    positive_words = []
-    neutral_words = []
-    negative_words = []
-    
-    for feedback in df["Feedback"].dropna():
-        words = re.findall(r"\b\w+\b", feedback.lower())
+    try:
+        df = pd.read_csv(full_path)
         
-        for word in words:
-            # Skip stopwords and very short words
-            if word in stop_words or len(word) <= 2:
-                continue
-                
-            # Get sentiment score for this word
-            sentiment_score = sia.polarity_scores(word)
+        # Determine which feedback column to use based on the column_name parameter
+        feedback_column = None
+        sentiment_column = None
+        topic_column = None
+        
+        if column_name and column_name.startswith("Sentiment_"):
+            # Extract the original column name from the sentiment column name
+            original_column = column_name.replace("Sentiment_", "")
+            if original_column in df.columns:
+                feedback_column = original_column
+                sentiment_column = column_name
+                topic_column = f"Topic_{original_column}"
+        
+        # If no valid column found, use the first available column
+        if not feedback_column:
+            # Try to find a column that has a corresponding Sentiment_ column
+            for col in df.columns:
+                if f"Sentiment_{col}" in df.columns:
+                    feedback_column = col
+                    sentiment_column = f"Sentiment_{col}"
+                    topic_column = f"Topic_{col}"
+                    break
             
-            # Classify word based on sentiment score
-            if sentiment_score['compound'] >= 0.05:
-                positive_words.append(word)
-            elif sentiment_score['compound'] <= -0.05:
-                negative_words.append(word)
-            else:
-                neutral_words.append(word)
-    
-    # Determine which words to use based on sentiment filter
-    if sentiment_filter == "positive":
-        word_counts = Counter(positive_words)
-        color_func = lambda *args, **kwargs: "green"  # Use green for positive words
-    elif sentiment_filter == "negative":
-        word_counts = Counter(negative_words)
-        color_func = lambda *args, **kwargs: "red"    # Use red for negative words
-    elif sentiment_filter == "neutral":
-        word_counts = Counter(neutral_words)
-        color_func = lambda *args, **kwargs: "gray"   # Use gray for neutral words
-    else:  # "all" or any other value
-        # Combine all words but keep their original sentiment colors
-        all_words = []
-        all_words.extend(positive_words)
-        all_words.extend(neutral_words)
-        all_words.extend(negative_words)
-        word_counts = Counter(all_words)
+            # If still no column found, use "Feedback" as fallback
+            if not feedback_column and "Feedback" in df.columns:
+                feedback_column = "Feedback"
         
-        # Custom color function to color words by sentiment
-        def color_func(word, font_size, position, orientation, random_state=None, **kwargs):
-            sentiment_score = sia.polarity_scores(word)
-            if sentiment_score['compound'] >= 0.05:
-                return "green"
-            elif sentiment_score['compound'] <= -0.05:
-                return "red"
-            else:
-                return "gray"
-    
-    # If we don't have enough words, use a generic approach as fallback
-    if len(word_counts) < 10:
-        all_feedback_text = " ".join(df["Feedback"].dropna())
-        words = re.findall(r"\b\w+\b", all_feedback_text.lower())
-        word_counts = Counter([word for word in words if word not in stop_words and len(word) > 2])
-    
-    # Generate the word cloud with appropriate colors
-    if sentiment_filter in ["positive", "negative", "neutral"]:
-        wordcloud = WordCloud(
-            width=800, 
-            height=400, 
-            background_color="white",
-            color_func=color_func,
-            max_words=100
-        ).generate_from_frequencies(word_counts)
-    else:
-        # For "all", use color_func to distinguish sentiment
-        wordcloud = WordCloud(
-            width=800, 
-            height=400, 
-            background_color="white",
-            color_func=color_func,
-            max_words=100
-        ).generate_from_frequencies(word_counts)
+        if not feedback_column or feedback_column not in df.columns:
+            return jsonify({"error": "No suitable feedback column found"}), 400
 
-    # Save image to memory
-    img_io = io.BytesIO()
-    plt.figure(figsize=(10, 5))
-    plt.imshow(wordcloud, interpolation="bilinear")
-    plt.axis("off")
-    plt.tight_layout(pad=0)
-    plt.savefig(img_io, format="PNG", bbox_inches="tight")
-    img_io.seek(0)
-    
-    return send_file(img_io, mimetype="image/png")
+        # Filter by sentiment if provided
+        sentiment_map = {"negative": "LABEL_0", "neutral": "LABEL_1", "positive": "LABEL_2"}
+        if sentiment_filter in sentiment_map and sentiment_filter != "all" and sentiment_column in df.columns:
+            df = df[df[sentiment_column] == sentiment_map[sentiment_filter]]
+        
+        # Filter by topic if provided
+        if topic_filter and topic_filter != "all" and topic_column in df.columns:
+            df = df[df[topic_column] == topic_filter]
+
+        # Filter out rows with less than 3 words and empty/NaN values
+        df = df[df[feedback_column].notna()]  # Remove NaN values
+        df["word_count"] = df[feedback_column].apply(lambda x: len(re.findall(r'\b\w+\b', str(x))))
+        df = df[df["word_count"] >= 3]
+        
+        if len(df) == 0:
+            # Create a simple wordcloud showing "No data available"
+            wordcloud = WordCloud(
+                width=800, 
+                height=400, 
+                background_color="white"
+            ).generate("No data available for selected filters")
+            
+            img_io = io.BytesIO()
+            plt.figure(figsize=(10, 5))
+            plt.imshow(wordcloud, interpolation="bilinear")
+            plt.axis("off")
+            plt.tight_layout(pad=0)
+            plt.savefig(img_io, format="PNG", bbox_inches="tight")
+            img_io.seek(0)
+            return send_file(img_io, mimetype="image/png")
+        
+        # Initialize sentiment analyzer
+        sia = SentimentIntensityAnalyzer()
+        
+        # Combine all feedback texts
+        all_feedback_text = " ".join(df[feedback_column].tolist())
+        
+        # Get sentiment words from VADER lexicon
+        vader_lexicon = sia.lexicon
+        sentiment_words = set(word.lower() for word in vader_lexicon.keys())
+        
+        # Tokenize and filter for sentiment words only
+        words = []
+        for word in re.findall(r"\b[a-zA-Z]+\b", all_feedback_text.lower()):
+            if word in sentiment_words and len(word) > 2:
+                words.append(word)
+        
+        # If no sentiment words found, check with a less strict approach
+        if not words:
+            for word in re.findall(r"\b[a-zA-Z]+\b", all_feedback_text.lower()):
+                if len(word) > 2:
+                    score = sia.polarity_scores(word)['compound']
+                    if abs(score) >= 0.5:  # Only include strongly sentiment words
+                        words.append(word)
+        
+        # Count word frequencies
+        word_counts = Counter(words)
+        
+        # If still no words, show a message
+        if not word_counts:
+            wordcloud = WordCloud(
+                width=800, 
+                height=400, 
+                background_color="white"
+            ).generate("No sentiment words found for selected filters")
+            
+            img_io = io.BytesIO()
+            plt.figure(figsize=(10, 5))
+            plt.imshow(wordcloud, interpolation="bilinear")
+            plt.axis("off")
+            plt.tight_layout(pad=0)
+            plt.savefig(img_io, format="PNG", bbox_inches="tight")
+            img_io.seek(0)
+            return send_file(img_io, mimetype="image/png")
+        
+        # Define color function based on sentiment
+        def get_color_func(sentiment_filter):
+            if sentiment_filter == "positive":
+                return lambda *args, **kwargs: "green"
+            elif sentiment_filter == "negative":
+                return lambda *args, **kwargs: "red"
+            elif sentiment_filter == "neutral":
+                return lambda *args, **kwargs: "gray"
+            else:
+                # Custom color function for "all" sentiment
+                def color_by_sentiment(word, font_size, position, orientation, random_state=None, **kwargs):
+                    score = sia.polarity_scores(word)['compound']
+                    if score >= 0.5:
+                        return "green"
+                    elif score <= -0.5:
+                        return "red"
+                    else:
+                        return "dimgray"  # Neutral words
+                return color_by_sentiment
+        
+        # Generate wordcloud from word frequencies
+        wordcloud = WordCloud(
+            width=800, 
+            height=400,
+            background_color="white",
+            color_func=get_color_func(sentiment_filter),
+            max_words=100,
+            collocations=False
+        ).generate_from_frequencies(word_counts)
+        
+        # Save image to memory
+        img_io = io.BytesIO()
+        plt.figure(figsize=(10, 5))
+        plt.imshow(wordcloud, interpolation="bilinear")
+        
+        # Add a small caption with filter information
+        filter_caption = []
+        if sentiment_filter != "all":
+            filter_caption.append(f"Sentiment: {sentiment_filter}")
+        if topic_filter and topic_filter != "all":
+            filter_caption.append(f"Topic: {topic_filter}")
+        
+        if filter_caption:
+            plt.title(" | ".join(filter_caption), fontsize=10, pad=5)
+        
+        plt.axis("off")
+        plt.tight_layout(pad=0)
+        plt.savefig(img_io, format="PNG", bbox_inches="tight")
+        img_io.seek(0)
+        
+        return send_file(img_io, mimetype="image/png")
+        
+    except Exception as e:
+        print(f"Error generating word cloud: {str(e)}")
+        # Return a simple error image
+        img_io = io.BytesIO()
+        plt.figure(figsize=(10, 5))
+        plt.text(0.5, 0.5, f"Error generating word cloud: {str(e)}", 
+                 horizontalalignment='center', verticalalignment='center')
+        plt.axis("off")
+        plt.savefig(img_io, format="PNG", bbox_inches="tight")
+        img_io.seek(0)
+        return send_file(img_io, mimetype="image/png")
 

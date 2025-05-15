@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import { useParams,useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import DonutChart from "../../components/SentimentChart";
 import TopicChart from "../../components/TopicChart";
 import SentimentByTopicChart from "../../components/SentimentByTopicChart";
@@ -12,14 +12,8 @@ const ResultPage = () => {
   const [courseName, setCourseName] = useState("");
   const [suggestion, setSuggestion] = useState("");
   const [rowCount, setRowCount] = useState(0);
-  const [sentimentCounts, setSentimentCounts] = useState({
-    negative: 0,
-    neutral: 0,
-    positive: 0,
-  });
-  const [topicCounts, setTopicCounts] = useState({});
-  const [sentimentByTopic, setSentimentByTopic] = useState({});
-  const [wordCloudUrl, setWordCloudUrl] = useState(""); // Store image URL instead of raw data
+  const [columnData, setColumnData] = useState({});
+  const [selectedColumn, setSelectedColumn] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
@@ -28,6 +22,7 @@ const ResultPage = () => {
   const handleGoBack = () => {
     navigate(-1); // This will navigate to the previous page in history
   };
+
   useEffect(() => {
     const fetchFileData = async () => {
       try {
@@ -35,11 +30,10 @@ const ResultPage = () => {
         const response = await axios.get(`http://localhost:5000/api/file/get_file_details/${fileId}`);
         console.log("API Response:", response.data);
 
-        const { file_path, course_name,suggestion } = response.data;
+        const { file_path, course_name, suggestion } = response.data;
         setFilePath(file_path);
         setCourseName(course_name);
         setSuggestion(suggestion);
-        
 
         if (file_path) {
           console.log("Fetching CSV data from:", file_path);
@@ -49,18 +43,13 @@ const ResultPage = () => {
           console.log("CSV Response:", csvResponse.data);
 
           setRowCount(csvResponse.data.totalRows);
-
-          setSentimentCounts({
-            negative: csvResponse.data.sentiment.negative || 0,
-            neutral: csvResponse.data.sentiment.neutral || 0,
-            positive: csvResponse.data.sentiment.positive || 0,
-          });
-
-          setTopicCounts(csvResponse.data.topics || {});
-          setSentimentByTopic(csvResponse.data.sentiment_by_topic || {});
-
-          // Set the Word Cloud image URL
-          setWordCloudUrl(`http://localhost:5000/api/file/wordcloud-image?filePath=${file_path}`);
+          setColumnData(csvResponse.data.columns || {});
+          
+          // Set the first column as selected by default
+          const columns = Object.keys(csvResponse.data.columns || {});
+          if (columns.length > 0) {
+            setSelectedColumn(columns[0]);
+          }
         }
       } catch (error) {
         console.error("Error fetching file data:", error);
@@ -82,18 +71,46 @@ const ResultPage = () => {
   if (error) {
     return <div>{error}</div>;
   }
-  
+
+  // Get the current selected column data
+  const currentColumnData = selectedColumn ? columnData[selectedColumn] || {} : {};
+  const sentimentCounts = currentColumnData.sentiment || { negative: 0, neutral: 0, positive: 0 };
+  const topicCounts = currentColumnData.topics || {};
+  const sentimentByTopic = currentColumnData.sentiment_by_topic || {};
 
   return (
     <div className="container mt-4">
-      
-      <div className=" mb-4">
+      <div className="mb-4">
         <button 
           className="btn btn-outline-primary" 
           onClick={handleGoBack}
         >Back</button>
         <h2 className="text-center fw-bold">Results for {courseName || "Loading..."}</h2>
       </div>
+
+      {/* Column selector */}
+      {Object.keys(columnData).length > 1 && (
+        <div className="row mb-4">
+          <div className="col-md-12">
+            <div className="card shadow-sm">
+              <div className="card-body">
+                <h5 className="card-title">Select Column to View</h5>
+                <div className="btn-group">
+                  {Object.keys(columnData).map(column => (
+                    <button
+                      key={column}
+                      className={`btn ${selectedColumn === column ? 'btn-primary' : 'btn-outline-primary'}`}
+                      onClick={() => setSelectedColumn(column)}
+                    >
+                      {column.replace('Sentiment_', '')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="row mt-4">
         <div className="col-md-6">
@@ -111,35 +128,36 @@ const ResultPage = () => {
         </div>
         
         <div className="col-md-6" >
-          <WordCloud filePath={filePath} />
+          <WordCloud filePath={filePath} columnName={selectedColumn} />
         </div>
       </div>
+
       <div className="row mt-4">
-      <div className="col-md-12">
-        <div className="card shadow-sm">
-          <div className="card-header bg-primary text-white">
-            <h5 className="card-title mb-0">
-              <i className="bi bi-lightbulb me-2"></i>
-              Suggested Improvements
-            </h5>
-          </div>
-          <div className="card-body">
-            <div className="d-flex">
-              <div className="flex-shrink-0">
-                <i className="bi bi-info-circle-fill text-primary fs-4"></i>
-              </div>
-              <div className="ms-3">
-                <p className="card-text">{suggestion || "Loading suggestions..."}</p>
+        <div className="col-md-12">
+          <div className="card shadow-sm">
+            <div className="card-header bg-primary text-white">
+              <h5 className="card-title mb-0">
+                <i className="bi bi-lightbulb me-2"></i>
+                Suggested Improvements
+              </h5>
+            </div>
+            <div className="card-body">
+              <div className="d-flex">
+                <div className="flex-shrink-0">
+                  <i className="bi bi-info-circle-fill text-primary fs-4"></i>
+                </div>
+                <div className="ms-3">
+                  <p className="card-text">{suggestion || "Loading suggestions..."}</p>
+                </div>
               </div>
             </div>
-          </div>
-          <div className="card-footer bg-light">
-            <small className="text-muted">Based on analysis of feedback data</small>
+            <div className="card-footer bg-light">
+              <small className="text-muted">Based on analysis of feedback data</small>
+            </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
   );
 };
 
