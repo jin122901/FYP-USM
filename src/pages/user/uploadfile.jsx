@@ -312,23 +312,238 @@ function UploadForm() {
     };
 
     return (
-        <div className="container mt-5">
-            <h2 className="text-center mb-4">Get insight from your Student</h2>
-           
-            <div className="d-flex justify-content-end mb-3">
-                <div className="w-75 me-auto">
-                    <input 
-                        type="text" 
-                        className="form-control w-25" 
-                        placeholder="🔍Search by course" 
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)} 
-                    />
+        <div className="container-fluid py-4 px-4">
+            {/* Header Section */}
+            <div className="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h2 className="mb-1">Student Feedback Analysis</h2>
+                    <p className="text-muted">Upload and analyze student feedback data</p>
                 </div>
-                <button className="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">
-                    Add Feedback
+                <button 
+                    className="btn btn-primary d-flex align-items-center" 
+                    data-bs-toggle="modal" 
+                    data-bs-target="#uploadModal"
+                >
+                    <i className="bi bi-cloud-upload me-2"></i>
+                    Upload Feedback
                 </button>
             </div>
+
+            {/* Search and Stats Section */}
+            <div className="row g-3 mb-4">
+                <div className="col-md-4">
+                    <div className="card shadow-sm">
+                        <div className="card-body d-flex align-items-center">
+                            <div className="rounded-circle bg-primary bg-opacity-10 p-3 me-3">
+                                <i className="bi bi-file-text text-primary fs-4"></i>
+                            </div>
+                            <div>
+                                <h6 className="text-muted mb-1">Total Files</h6>
+                                <h3 className="mb-0">{fileList?.length || 0}</h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="col-md-4">
+                    <div className="card shadow-sm">
+                        <div className="card-body d-flex align-items-center">
+                            <div className="rounded-circle bg-success bg-opacity-10 p-3 me-3">
+                                <i className="bi bi-check-circle text-success fs-4"></i>
+                            </div>
+                            <div>
+                                <h6 className="text-muted mb-1">Processed</h6>
+                                <h3 className="mb-0">
+                                    {fileList?.filter(file => file.statusprocess === 100).length || 0}
+                                </h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="col-md-4">
+                    <div className="input-group">
+                        <span className="input-group-text bg-white border-end-0">
+                            <i className="bi bi-search text-muted"></i>
+                        </span>
+                        <input 
+                            type="text" 
+                            className="form-control border-start-0 ps-0" 
+                            placeholder="Search by course name..." 
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
+                </div>
+            </div>
+
+            {/* File List Card */}
+            <div className="card shadow-sm">
+                <div className="card-body">
+                    <div className="table-responsive">
+                        <table className="table table-hover align-middle">
+                            <thead>
+                                <tr>
+                                    <th className="fw-semibold">#</th>
+                                    <th className="fw-semibold">Course Name</th>
+                                    <th className="fw-semibold">File Name</th>
+                                    <th className="fw-semibold">Upload Date</th>
+                                    <th className="fw-semibold">Status</th>
+                                    <th className="fw-semibold">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {fileList?.length > 0 ? (
+                                    fileList.map((file, index) => (
+                                        <tr key={file.fileid || index}>
+                                            <td>{index + 1}</td>
+                                            <td>
+                                                <div className="d-flex align-items-center">
+                                                    <div className="avatar-circle me-2">
+                                                        {file.coursename?.charAt(0).toUpperCase()}
+                                                    </div>
+                                                    {file.coursename}
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div className="d-flex align-items-center">
+                                                    <i className="bi bi-file-earmark-text me-2 text-muted"></i>
+                                                    {file.filename}
+                                                </div>
+                                            </td>
+                                            <td>{file.uploaded_at ? new Date(file.uploaded_at).toLocaleDateString() : "N/A"}</td>
+                                            <td style={{ width: "200px" }}>
+                                                <div className="d-flex align-items-center">
+                                                    <div className="progress flex-grow-1" style={{ height: "8px" }}>
+                                                        <div
+                                                            className={`progress-bar ${
+                                                                file.statusprocess < 100 
+                                                                    ? "progress-bar-striped progress-bar-animated bg-primary" 
+                                                                    : "bg-success"
+                                                            }`}
+                                                            style={{ width: `${file.statusprocess}%` }}
+                                                        />
+                                                    </div>
+                                                    <span className="ms-2 small">{file.statusprocess}%</span>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div className="btn-group">
+                                                    <button 
+                                                        className="btn btn-sm btn-outline-primary" 
+                                                        disabled={file.statusprocess !== 100}
+                                                        onClick={() => navigate(`/resultpage/${file.fileid}`)}
+                                                    >
+                                                        <i className="bi bi-graph-up me-1"></i>
+                                                        View Results
+                                                    </button>
+                                                    <button
+                                                        className="btn btn-sm btn-outline-danger ms-2"
+                                                        onClick={() => handleDelete(file.fileid)}
+                                                    >
+                                                        <i className="bi bi-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan="6" className="text-center py-5">
+                                            <div className="text-muted">
+                                                <i className="bi bi-inbox display-4 d-block mb-3"></i>
+                                                <p className="mb-0">No files uploaded yet</p>
+                                                <button 
+                                                    className="btn btn-primary mt-3" 
+                                                    data-bs-toggle="modal" 
+                                                    data-bs-target="#uploadModal"
+                                                >
+                                                    Upload Your First File
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Pagination */}
+                    {fileList?.length > 0 && (
+                        <div className="d-flex justify-content-between align-items-center mt-4">
+                            <p className="text-muted mb-0">
+                                Showing page {currentPage} of {totalPages}
+                            </p>
+                            <div className="btn-group">
+                                <button 
+                                    className="btn btn-outline-primary" 
+                                    disabled={currentPage === 1} 
+                                    onClick={() => fetchFiles("", currentPage - 1)}
+                                >
+                                    <i className="bi bi-chevron-left"></i>
+                                </button>
+                                <button 
+                                    className="btn btn-outline-primary" 
+                                    disabled={currentPage === totalPages} 
+                                    onClick={() => fetchFiles("", currentPage + 1)}
+                                >
+                                    <i className="bi bi-chevron-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Keep existing modals but add some styling */}
+            <style>
+                {`
+                    .avatar-circle {
+                        width: 32px;
+                        height: 32px;
+                        background-color: #e9ecef;
+                        border-radius: 50%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-weight: 500;
+                        color: #6c757d;
+                    }
+                    .card {
+                        border: none;
+                        border-radius: 0.5rem;
+                    }
+                    .table th {
+                        background-color: #f8f9fa;
+                        font-weight: 600;
+                    }
+                    .progress {
+                        background-color: #e9ecef;
+                        border-radius: 10px;
+                    }
+                    .progress-bar {
+                        border-radius: 10px;
+                    }
+                    .btn-group .btn {
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                    }
+                    .input-group-text {
+                        background-color: transparent;
+                    }
+                    .modal-content {
+                        border: none;
+                        border-radius: 0.5rem;
+                    }
+                    .modal-header {
+                        background-color: #f8f9fa;
+                        border-bottom: 1px solid #e9ecef;
+                    }
+                    .modal-footer {
+                        background-color: #f8f9fa;
+                        border-top: 1px solid #e9ecef;
+                    }
+                `}
+            </style>
 
             {/* Delete Confirmation Modal */}
             <div className="modal fade" id="deleteConfirmationModal" tabIndex="-1" aria-labelledby="deleteConfirmationModalLabel" aria-hidden="true">
@@ -402,196 +617,119 @@ function UploadForm() {
             </div>
 
             {/* Column Selection Modal */}
-            {/* Column Selection Modal */}
-<div className="modal fade" id="columnSelectionModal" tabIndex="-1" aria-labelledby="columnSelectionModalLabel" aria-hidden="true">
-    <div className="modal-dialog modal-lg">
-        <div className="modal-content">
-            <div className="modal-header">
-                <h5 className="modal-title" id="columnSelectionModalLabel">
-                    Configure Analysis
-                </h5>
-                <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div className="modal-body">
-                {error && <div className="alert alert-danger">{error}</div>}
-                
-                {filePreview && (
-                    <div className="mb-3">
-                        <h6>File: {filePreview.filename}</h6>
-                        <p>Total rows: {filePreview.rowCount}</p>
-                    </div>
-                )}
-                
-                <div className="mb-4">
-                    <label htmlFor="coursename" className="form-label">Course Name</label>
-                    <input 
-                        type="text" 
-                        className="form-control" 
-                        id="coursename" 
-                        value={coursename} 
-                        onChange={handleCourseChange} 
-                        required 
-                        placeholder="Enter the course name"
-                    />
-                </div>
-                
-                <h6 className="mb-3">Select Columns to Analyze:</h6>
-                <div className="mb-3">
-                    <div className="form-check mb-2">
-                        <input
-                            type="checkbox"
-                            className="form-check-input"
-                            id="selectAllColumns"
-                            checked={selectedColumns.length === columns.length && columns.length > 0}
-                            onChange={handleSelectAllColumns}
-                        />
-                        <label className="form-check-label" htmlFor="selectAllColumns">
-                            <strong>Select All Columns</strong>
-                        </label>
-                    </div>
-                    
-                    <div className="row column-checkboxes mt-2">
-                        {columns.map((column, index) => (
-                            <div className="col-md-4 mb-2" key={index}>
-                                <div className="form-check">
+            <div className="modal fade" id="columnSelectionModal" tabIndex="-1" aria-labelledby="columnSelectionModalLabel" aria-hidden="true">
+                <div className="modal-dialog modal-lg">
+                    <div className="modal-content">
+                        <div className="modal-header">
+                            <h5 className="modal-title" id="columnSelectionModalLabel">
+                                Configure Analysis
+                            </h5>
+                            <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div className="modal-body">
+                            {error && <div className="alert alert-danger">{error}</div>}
+                            
+                            {filePreview && (
+                                <div className="mb-3">
+                                    <h6>File: {filePreview.filename}</h6>
+                                    <p>Total rows: {filePreview.rowCount}</p>
+                                </div>
+                            )}
+                            
+                            <div className="mb-4">
+                                <label htmlFor="coursename" className="form-label">Course Name</label>
+                                <input 
+                                    type="text" 
+                                    className="form-control" 
+                                    id="coursename" 
+                                    value={coursename} 
+                                    onChange={handleCourseChange} 
+                                    required 
+                                    placeholder="Enter the course name"
+                                />
+                            </div>
+                            
+                            <h6 className="mb-3">Select Columns to Analyze:</h6>
+                            <div className="mb-3">
+                                <div className="form-check mb-2">
                                     <input
                                         type="checkbox"
                                         className="form-check-input"
-                                        id={`column-${index}`}
-                                        checked={selectedColumns.includes(column)}
-                                        onChange={() => handleColumnSelection(column)}
+                                        id="selectAllColumns"
+                                        checked={selectedColumns.length === columns.length && columns.length > 0}
+                                        onChange={handleSelectAllColumns}
                                     />
-                                    <label className="form-check-label" htmlFor={`column-${index}`}>
-                                        {column}
+                                    <label className="form-check-label" htmlFor="selectAllColumns">
+                                        <strong>Select All Columns</strong>
                                     </label>
                                 </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-                
-                {previewData.length > 0 && (
-                    <div className="mb-3">
-                        <h6>Data Preview:</h6>
-                        <div className="table-responsive">
-                            <table className="table table-sm table-striped table-bordered">
-                                <thead>
-                                    <tr>
-                                        {columns.map((column, index) => (
-                                            <th key={index} className={selectedColumns.includes(column) ? 'table-primary' : ''}>
-                                                {column}
-                                            </th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {previewData.map((row, rowIndex) => (
-                                        <tr key={rowIndex}>
-                                            {columns.map((column, colIndex) => (
-                                                <td key={colIndex} className={selectedColumns.includes(column) ? 'table-primary' : ''}>
-                                                    {row[column]}
-                                                </td>
-                                            ))}
-                                        </tr>
+                                
+                                <div className="row column-checkboxes mt-2">
+                                    {columns.map((column, index) => (
+                                        <div className="col-md-4 mb-2" key={index}>
+                                            <div className="form-check">
+                                                <input
+                                                    type="checkbox"
+                                                    className="form-check-input"
+                                                    id={`column-${index}`}
+                                                    checked={selectedColumns.includes(column)}
+                                                    onChange={() => handleColumnSelection(column)}
+                                                />
+                                                <label className="form-check-label" htmlFor={`column-${index}`}>
+                                                    {column}
+                                                </label>
+                                            </div>
+                                        </div>
                                     ))}
-                                </tbody>
-                            </table>
+                                </div>
+                            </div>
+                            
+                            {previewData.length > 0 && (
+                                <div className="mb-3">
+                                    <h6>Data Preview:</h6>
+                                    <div className="table-responsive">
+                                        <table className="table table-sm table-striped table-bordered">
+                                            <thead>
+                                                <tr>
+                                                    {columns.map((column, index) => (
+                                                        <th key={index} className={selectedColumns.includes(column) ? 'table-primary' : ''}>
+                                                            {column}
+                                                        </th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {previewData.map((row, rowIndex) => (
+                                                    <tr key={rowIndex}>
+                                                        {columns.map((column, colIndex) => (
+                                                            <td key={colIndex} className={selectedColumns.includes(column) ? 'table-primary' : ''}>
+                                                                {row[column]}
+                                                            </td>
+                                                        ))}
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <div className="modal-footer">
+                            <button type="button" className="btn btn-secondary" data-bs-dismiss="modal">
+                                Cancel
+                            </button>
+                            <button 
+                                type="button" 
+                                className="btn btn-primary" 
+                                data-bs-dismiss="modal"
+                                onClick={handleSubmit}
+                                disabled={selectedColumns.length === 0 || !coursename.trim()}
+                            >
+                                Process Selected Columns
+                            </button>
                         </div>
                     </div>
-                )}
-            </div>
-            <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" data-bs-dismiss="modal">
-                    Cancel
-                </button>
-                <button 
-                    type="button" 
-                    className="btn btn-primary" 
-                    data-bs-dismiss="modal"
-                    onClick={handleSubmit}
-                    disabled={selectedColumns.length === 0 || !coursename.trim()}
-                >
-                    Process Selected Columns
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-            {/* File List Table */}
-            <table className="table mt-4">
-                <thead className="table-light">
-                    <tr>
-                        <th>#</th>
-                        <th>Course Name</th>
-                        <th>Uploaded File</th>
-                        <th>Date</th>
-                        <th>Progress</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {fileList?.length > 0 ? (
-                        fileList.map((file, index) => (
-                            <tr key={file.fileid || index}>
-                                <td>{index + 1}</td>
-                                <td>{file.coursename}</td>
-                                <td>{file.filename}</td>
-                                <td>{file.uploaded_at ? new Date(file.uploaded_at).toLocaleDateString() : "N/A"}</td>
-
-                                <td>
-                                    <div className="progress">
-                                        <div
-                                            className={`progress-bar ${file.statusprocess < 100 ? "progress-bar-striped progress-bar-animated" : "bg-success"}`}
-                                            role="progressbar"
-                                            style={{ width: `${file.statusprocess}%` }}
-                                        >
-                                            {file.statusprocess}%
-                                        </div>
-                                    </div>
-                                </td>
-                                <td>
-                                    <button 
-                                        className="btn btn-info btn-sm me-2" 
-                                        disabled={file.statusprocess !== 100}
-                                        onClick={() => navigate(`/resultpage/${file.fileid}`)}
-                                    >
-                                        Results
-                                    </button>
-                                    <button
-                                        className="btn btn-danger btn-sm"
-                                        onClick={() => handleDelete(file.fileid)}
-                                    >
-                                        Delete
-                                    </button>
-                                </td>
-                            </tr>
-                        ))
-                    ) : (
-                        <tr>
-                            <td colSpan="6" className="text-center">No files uploaded yet.</td>
-                        </tr>
-                    )}
-                </tbody>
-            </table>
-            <div className="d-flex justify-content-center mt-3">
-                <button 
-                    className="btn btn-secondary mx-2" 
-                    disabled={currentPage === 1} 
-                    onClick={() => fetchFiles("", currentPage - 1)}
-                >
-                    ‹
-                </button>
-
-                <span>{currentPage} / {totalPages}</span>
-
-                <button 
-                    className="btn btn-secondary mx-2" 
-                    disabled={currentPage === totalPages} 
-                    onClick={() => fetchFiles("", currentPage + 1)}
-                >
-                    ›
-                </button>
+                </div>
             </div>
         </div>
     );

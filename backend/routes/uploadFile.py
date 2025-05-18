@@ -437,6 +437,7 @@ def read_csv():
         result = {
             "totalRows": row_count,
             "columns": {},
+            "feedbackData": [],
             "word_cloud_url": "/wordcloud-image"
         }
 
@@ -446,18 +447,22 @@ def read_csv():
         # If no specific columns requested, use all found sentiment columns
         columns_to_process = selected_columns if selected_columns else all_sentiment_cols
         
+        # Process each column and gather feedback data
         for col in columns_to_process:
             if col not in df.columns:
                 continue
                 
-            # Process each sentiment column
+            # Get the base feedback column name
+            feedback_col = col.replace('Sentiment_', '')
+            topic_col = f"Topic_{feedback_col}"
+            
+            # Process sentiment counts for analytics
             sentiment_counts = df[col].value_counts().to_dict()
             
-            # Find corresponding topic column (if exists)
-            topic_col = f"Topic_{col.replace('Sentiment_', '')}"
+            # Get topic counts if topic column exists
             topic_counts = df[topic_col].value_counts().to_dict() if topic_col in df.columns else {}
             
-            # Sentiment distribution per topic (if topics exist)
+            # Sentiment distribution per topic
             sentiment_by_topic = {}
             if topic_col in df.columns:
                 sentiment_by_topic = (
@@ -467,6 +472,7 @@ def read_csv():
                     .to_dict("index")
                 )
             
+            # Store analytics data
             result["columns"][col] = {
                 "sentiment": {
                     "negative": sentiment_counts.get("LABEL_0", 0),
@@ -476,10 +482,39 @@ def read_csv():
                 "topics": topic_counts,
                 "sentiment_by_topic": sentiment_by_topic
             }
+            
+            # Add properly formatted feedback data
+            if feedback_col in df.columns:
+                for idx, row in df.iterrows():
+                    if pd.notna(row[feedback_col]):
+                        # Convert sentiment labels to user-friendly terms
+                        sentiment = "neutral"
+                        if col in row and pd.notna(row[col]):
+                            if row[col] == "LABEL_0":
+                                sentiment = "negative"
+                            elif row[col] == "LABEL_2":
+                                sentiment = "positive"
+                        
+                        # Get topic if available
+                        topic = None
+                        if topic_col in df.columns and pd.notna(row[topic_col]):
+                            topic = row[topic_col]
+                        
+                        # Create feedback entry with all required fields
+                        feedback_entry = {
+                            "id": int(idx),
+                            "feedback": str(row[feedback_col]),
+                            "sentiment": sentiment,
+                            "topic": topic,
+                            "source_column": feedback_col
+                        }
+                        result["feedbackData"].append(feedback_entry)
 
+        print(f"Formatted {len(result['feedbackData'])} feedback entries")
         return jsonify(result)
 
     except Exception as e:
+        print(f"Error in read_csv: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 

@@ -72,7 +72,7 @@ const WordCloud = ({ filePath, columnName }) => {
   };
 
   return (
-    <div className="card shadow-sm p-3 text-center h-100">
+    <div className="card shadow-sm p-3 text-center h-70">
       <h5 className="fw-bold mb-3">Word Cloud</h5>
 
       {/* Sentiment Filter Buttons */}

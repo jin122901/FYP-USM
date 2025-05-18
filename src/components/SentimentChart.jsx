@@ -1,7 +1,7 @@
 import React from "react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
-const DonutChart = ({ sentimentCounts }) => {
+const DonutChart = ({ sentimentCounts, onSentimentClick, selectedSentiment }) => {
   const totalSentiments =
     sentimentCounts.negative + sentimentCounts.neutral + sentimentCounts.positive;
 
@@ -9,18 +9,34 @@ const DonutChart = ({ sentimentCounts }) => {
     {
       name: "Negative",
       value: (sentimentCounts.negative / totalSentiments) * 100,
+      rawValue: sentimentCounts.negative,
+      sentiment: "negative"
     },
     {
       name: "Neutral",
       value: (sentimentCounts.neutral / totalSentiments) * 100,
+      rawValue: sentimentCounts.neutral,
+      sentiment: "neutral"
     },
     {
       name: "Positive",
       value: (sentimentCounts.positive / totalSentiments) * 100,
+      rawValue: sentimentCounts.positive,
+      sentiment: "positive"
     },
   ];
 
-  const COLORS = ["#dc3545", "#ffc107", "#28a745"];
+  const COLORS = {
+    Negative: "#dc3545",
+    Neutral: "#ffc107",
+    Positive: "#28a745"
+  };
+
+  const handleClick = (data) => {
+    if (onSentimentClick && data.sentiment) {
+      onSentimentClick(data.sentiment);
+    }
+  };
 
   const renderCustomizedLabel = ({
     cx,
@@ -29,19 +45,25 @@ const DonutChart = ({ sentimentCounts }) => {
     innerRadius,
     outerRadius,
     percent,
+    payload,
   }) => {
     const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
     const x = cx + radius * Math.cos(-midAngle * Math.PI / 180);
     const y = cy + radius * Math.sin(-midAngle * Math.PI / 180);
+    const isSelected = selectedSentiment === payload.sentiment;
 
     return (
       <text
         x={x}
         y={y}
-        fill="black"
+        fill={isSelected ? "#fff" : "black"}
         textAnchor="middle"
         dominantBaseline="central"
         fontWeight="bold"
+        style={{ 
+          filter: isSelected ? 'drop-shadow(0px 0px 2px rgba(0,0,0,0.5))' : 'none',
+          cursor: 'pointer'
+        }}
       >
         {`${(percent * 100).toFixed(1)}%`}
       </text>
@@ -50,16 +72,15 @@ const DonutChart = ({ sentimentCounts }) => {
 
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
+      const data = payload[0].payload;
       return (
-        <div
-          className="custom-tooltip"
-          style={{
-            backgroundColor: "#fff",
-            padding: "5px 10px",
-            border: "1px solid #ccc",
-          }}
-        >
-          <p className="label">{`${payload[0].name}: ${payload[0].value.toFixed(1)}%`}</p>
+        <div className="custom-tooltip bg-white p-2 border rounded shadow-sm">
+          <p className="mb-0">
+            <strong>{data.name}</strong>
+          </p>
+          <p className="mb-0">Count: {data.rawValue}</p>
+          <p className="mb-0">Percentage: {data.value.toFixed(1)}%</p>
+          <small className="text-muted">Click to filter</small>
         </div>
       );
     }
@@ -81,7 +102,7 @@ const DonutChart = ({ sentimentCounts }) => {
   const overallSentiment = calculateOverallSentiment();
 
   return (
-    <div className="card shadow-sm p-3">
+    <div className="card shadow-sm p-3 h-90">
       <style>
         {`
           @keyframes bounce {
@@ -117,13 +138,33 @@ const DonutChart = ({ sentimentCounts }) => {
                 fill="#8884d8"
                 labelLine={false}
                 label={renderCustomizedLabel}
+                onClick={handleClick}
+                cursor="pointer"
               >
                 {data.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  <Cell 
+                    key={`cell-${index}`} 
+                    fill={COLORS[entry.name]}
+                    style={{
+                      filter: selectedSentiment === entry.sentiment ? 'brightness(1.2)' : 'none',
+                      cursor: 'pointer'
+                    }}
+                  />
                 ))}
               </Pie>
               <Tooltip content={<CustomTooltip />} />
-              <Legend />
+              <Legend 
+                formatter={(value, entry) => (
+                  <span style={{ 
+                    color: selectedSentiment === entry.payload.sentiment ? COLORS[value] : '#666',
+                    fontWeight: selectedSentiment === entry.payload.sentiment ? 'bold' : 'normal',
+                    cursor: 'pointer'
+                  }}>
+                    {value}
+                  </span>
+                )}
+                onClick={(data) => handleClick(data.payload)}
+              />
             </PieChart>
           </ResponsiveContainer>
         </div>
@@ -140,6 +181,12 @@ const DonutChart = ({ sentimentCounts }) => {
           </div>
         </div>
       </div>
+
+      {selectedSentiment === "all" && (
+        <div className="mt-2 text-muted text-center">
+          <small>Click on a segment to filter the data</small>
+        </div>
+      )}
     </div>
   );
 };
