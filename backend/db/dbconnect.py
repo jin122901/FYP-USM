@@ -1,5 +1,6 @@
 import psycopg2
 
+
 # Fetch variables
 USER = "postgres.akmdanrovajjyunxpadq"
 PASSWORD = "@007757461jJ"
@@ -19,4 +20,5 @@ print("Connection successful!")
 
 # Create a cursor to execute SQL queries
 connection = get_db_connection()
+
 

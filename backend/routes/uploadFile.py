@@ -6,7 +6,7 @@ from flask import Blueprint, request, jsonify,session, send_file
 from werkzeug.utils import secure_filename
 from model.file import insert_file_path, fetch_user_files, update_file_status, delete_uploaded_file, get_file_details_from_db
 from transformers import pipeline
-from ml_model import sentiment_pipeline,topic_names, kmeans 
+from ml_model import sentiment_pipeline
 from tqdm import tqdm
 import threading
 from sentence_transformers import SentenceTransformer
@@ -20,6 +20,8 @@ import google.generativeai as genai
 from flask import current_app as app
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from nltk.corpus import stopwords
+from sklearn.cluster import KMeans
+import torch
 
 
 
@@ -313,24 +315,102 @@ def perform_sentiment_analysis(feedback_list, batch_size=16):
     return predictions
 
 bert_model = SentenceTransformer("all-MiniLM-L6-v2")
-def classify_topics(feedback_list):
-    """
-    Assigns topics to feedback using a pre-trained KMeans model and SentenceTransformer.
 
+def generate_topic_name(feedback_list, cluster_feedback):
+    """
+    Generate a topic name based on the feedback in a cluster using BERT embeddings.
+    """
+    # Get the most representative feedback from the cluster
+    if not cluster_feedback:
+        return "General Feedback"
+    
+    # Use BERT to get embeddings for all feedback in the cluster
+    embeddings = bert_model.encode(cluster_feedback, convert_to_tensor=True)
+    
+    # Calculate the centroid of the cluster
+    centroid = embeddings.mean(dim=0)
+    
+    # Find the feedback closest to the centroid
+    distances = torch.cdist(centroid.unsqueeze(0), embeddings)[0]
+    most_representative_idx = distances.argmin().item()
+    
+    # Get the most representative feedback
+    representative_feedback = cluster_feedback[most_representative_idx]
+    
+    # Use Gemini to generate a concise topic name
+    try:
+        genai.configure(api_key="AIzaSyDWMCleTLS_bk4SWtnmUj1k_nFIPt2LClM")
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        
+        prompt = f"""
+        Based on this feedback, generate a concise topic name (2-4 words) that best represents the main theme.
+        Rules:
+        1. Topic name should be specific and descriptive, focusing on the main subject matter.
+        2. Focus only on academic aspects (teaching quality, assessments, resources, engagement)
+        3. Ensure that each topic name is used only once.
+        4. Do not use any special characters, asterisks, or markdown formatting.
+        5. Use plain text only.
+        
+        Feedback: {representative_feedback}
+        """
+        
+        response = model.generate_content(prompt)
+        topic_name = response.text.strip()
+        
+        # Clean up the response to ensure it's just the topic name
+        topic_name = topic_name.replace('"', '').replace("'", "").strip()
+        topic_name = topic_name.replace('*', '').strip()  # Remove asterisks
+        topic_name = re.sub(r'[^\w\s-]', '', topic_name)  # Remove any other special characters
+        topic_name = ' '.join(topic_name.split())  # Normalize whitespace
+        
+        if len(topic_name) > 50:  # If too long, truncate
+            topic_name = topic_name[:47] + "..."
+            
+        return topic_name
+    except Exception as e:
+        print(f"Error generating topic name: {e}")
+        return "General Feedback"
+
+def classify_topics(feedback_list, max_clusters=5):
+    """
+    Assigns topics to feedback using BERT embeddings and dynamic topic generation.
+    
     Args:
-        feedback_list (list): List of feedback texts.
-        kmeans_model (KMeans): Preloaded KMeans clustering model.
-        topic_names (dict): Dictionary mapping cluster labels to topic names.
-
-    Returns:
-        list: Assigned topic names for each feedback.
+        feedback_list (list): List of feedback texts to classify
+        max_clusters (int): Maximum number of clusters to create (default: 5)
     """
+    if not feedback_list:
+        return []
+    
+    # Get embeddings for all feedback
+    embeddings = bert_model.encode(feedback_list, convert_to_tensor=True)
+    
+    # Convert to numpy for clustering
+    embeddings_np = embeddings.cpu().numpy()
+    
+    # Calculate number of clusters based on feedback size, but respect max_clusters
+    n_clusters = min(max(3, len(feedback_list) // 10), max_clusters)
+    
+    # Perform K-means clustering
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+    clusters = kmeans.fit_predict(embeddings_np)
+    
+    # Group feedback by cluster
+    cluster_feedback = {}
+    for i, cluster_id in enumerate(clusters):
+        if cluster_id not in cluster_feedback:
+            cluster_feedback[cluster_id] = []
+        cluster_feedback[cluster_id].append(feedback_list[i])
+    
+    # Generate topic names for each cluster
+    topic_names = {}
+    for cluster_id in cluster_feedback:
+        topic_names[cluster_id] = generate_topic_name(feedback_list, cluster_feedback[cluster_id])
+    
+    # Assign topics to each feedback
     topics = []
-    for feedback in tqdm(feedback_list, desc="🔍 Assigning Topics"):
-        embedding = bert_model.encode(feedback, convert_to_tensor=True).cpu().numpy().reshape(1, -1)
-        cluster = kmeans.predict(embedding)[0]  # Predict cluster
-        assigned_topic = topic_names.get(str(cluster), "Unknown Topic")
-        topics.append(assigned_topic)
+    for cluster_id in clusters:
+        topics.append(topic_names[cluster_id])
     
     return topics
 
