@@ -364,7 +364,7 @@ def generate_combined_recommendation(filepath, selected_columns):
 
         {feedback_text}
 
-        Based on this, provide specific recommendations for improvement in 100 words.
+        Based on this, provide specific recommendations for improvement in a paragraph of 100 to 150 words.
         """
         response = model.generate_content(prompt)
 
