@@ -1,4 +1,4 @@
-# FYP-USM — Student Course Feedback Analysis Platform
+# FYP-USM — Smart TeachInsight: Shaping Student Voices Into Intelligent Reflective Analytics
 
 A full-stack web application for **Universiti Sains Malaysia (USM) Final Year Project (FYP)** that helps educators analyze student course feedback at scale. Users upload CSV files, select feedback columns, and receive automated **sentiment classification**, **topic clustering**, **AI-generated recommendations**, and interactive **dashboards** with exportable reports.
 
