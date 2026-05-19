@@ -8,7 +8,6 @@ A full-stack web application for **Universiti Sains Malaysia (USM) Final Year Pr
 
 - [Features](#features)
 - [Tech Stack](#tech-stack)
-- [Architecture](#architecture)
 - [Project Structure](#project-structure)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
@@ -16,10 +15,8 @@ A full-stack web application for **Universiti Sains Malaysia (USM) Final Year Pr
 - [Running the Application](#running-the-application)
 - [User Roles & Routes](#user-roles--routes)
 - [Analysis Pipeline](#analysis-pipeline)
-- [API Overview](#api-overview)
 - [Database Schema](#database-schema)
 - [Known Limitations](#known-limitations)
-- [Security Notes](#security-notes)
 - [License](#license)
 
 ---
@@ -38,13 +35,13 @@ A full-stack web application for **Universiti Sains Malaysia (USM) Final Year Pr
   - Filterable feedback table
   - Word clouds (filterable by sentiment and topic)
   - AI-generated improvement recommendations from negative feedback
-- Export analysis reports (print-friendly HTML)
+- Export analysis reports 
 - Manage account profile and password
 
 ### For administrators
 
 - User management dashboard (list, search, activate/deactivate accounts)
-- Admin overview page with charts (uses sample data until backend stats endpoint is implemented)
+- Admin overview page with charts 
 
 ### Public
 
@@ -62,37 +59,6 @@ A full-stack web application for **Universiti Sains Malaysia (USM) Final Year Pr
 | **ML / NLP** | Hugging Face Transformers (fine-tuned sentiment model), Sentence Transformers (`all-MiniLM-L6-v2`), scikit-learn KMeans, NLTK VADER, langdetect |
 | **AI** | Google Gemini 2.0 Flash (topic naming & recommendations) |
 | **Visualization** | WordCloud, Matplotlib (server-side word cloud images) |
-
----
-
-## Architecture
-
-```mermaid
-flowchart LR
-  subgraph Frontend["React (Vite :5173)"]
-    UI[Pages & Charts]
-  end
-
-  subgraph Backend["Flask (:5000)"]
-    Auth[Auth & Users]
-    Upload[Upload & Analysis]
-    ML[Sentiment + Topics + Gemini]
-  end
-
-  subgraph Storage
-    DB[(PostgreSQL)]
-    FS[uploads/ CSV files]
-    Session[flask_session/]
-  end
-
-  UI -->|REST + cookies| Auth
-  UI -->|REST + cookies| Upload
-  Upload --> ML
-  Upload --> DB
-  Upload --> FS
-  Auth --> DB
-  Auth --> Session
-```
 
 ---
 
@@ -304,45 +270,6 @@ When a user uploads a CSV with selected columns:
 
 ---
 
-## API Overview
-
-Base URL: `http://localhost:5000`
-
-### Authentication (`/api`)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/register` | Create account |
-| POST | `/login` | Login, set session |
-| POST | `/logout` | Clear session |
-| GET | `/check_session` | Validate session / inactivity |
-| GET/PUT | `/account` | Profile read/update |
-| PUT | `/change-password` | Change password |
-
-### Users (`/api/users`)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/userlist` | List all users (admin) |
-| PUT | `/users/status` | Activate/deactivate user |
-
-### Files (`/api/file`)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/preview_file` | Preview CSV columns (no save) |
-| POST | `/upload` | Upload & start analysis |
-| GET | `/files` | List user's files (paginated) |
-| DELETE | `/files/deleteFile/<id>` | Delete file |
-| GET | `/get_file_details/<fileid>` | File metadata |
-| GET | `/read-csv` | Analytics & feedback rows |
-| GET | `/wordcloud-image` | PNG word cloud |
-| GET | `/get_columns` | Column preview for saved file |
-
-Detailed upload/analysis documentation: [`backend/routes/uploadFile.README.md`](backend/routes/uploadFile.README.md)
-
----
-
 ## Database Schema
 
 ### `user_info`
@@ -377,19 +304,6 @@ Detailed upload/analysis documentation: [`backend/routes/uploadFile.README.md`](
 - `change-password` route references `bcrypt.check_password_hash` while registration uses `bcrypt.checkpw` — verify password change flow before production use.
 - Large models load at Flask startup; first request may be slow and memory-intensive.
 - Session timeout is **10 minutes** of inactivity (Malaysia timezone for activity tracking).
-
----
-
-## Security Notes
-
-Before pushing to GitHub:
-
-1. **Remove secrets** from `dbconnect.py`, `app.py`, and `uploadFile.py` (DB password, Flask secret, Gemini API key).
-2. Rotate any keys that were ever committed or shared.
-3. Keep `.env` out of version control (add to `.gitignore` if not already).
-4. Set `SESSION_COOKIE_SECURE = True` and a strong `secret_key` in production.
-5. Restrict admin routes server-side, not only via frontend `ProtectedRoute`.
-6. Uploaded CSVs may contain personal data — secure `uploads/` and comply with your institution's data policies.
 
 ---
 
