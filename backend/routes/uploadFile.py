@@ -339,7 +339,7 @@ def generate_topic_name(feedback_list, cluster_feedback):
     
     # Use Gemini to generate a concise topic name
     try:
-        genai.configure(api_key="AIzaSyDWMCleTLS_bk4SWtnmUj1k_nFIPt2LClM")
+        genai.configure(api_key="")
         model = genai.GenerativeModel("gemini-2.0-flash")
         
         prompt = f"""
@@ -415,7 +415,7 @@ def classify_topics(feedback_list, max_clusters=5):
     return topics
 
 def generate_combined_recommendation(filepath, selected_columns):
-    genai.configure(api_key="AIzaSyDWMCleTLS_bk4SWtnmUj1k_nFIPt2LClM")
+    genai.configure(api_key="")
     model = genai.GenerativeModel("gemini-2.0-flash")
     
     try:
